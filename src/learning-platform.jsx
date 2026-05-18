@@ -20,7 +20,20 @@ const C = {
 };
 
 const ICONS = ["⚙️","✅","🛡️","🌿","💻","📊","🏭","🔬","📋","🎯","💡","🔧","📦","🧪","🏗️","📐"];
-const COLORS = ["#0066CC","#00875A","#E65100","#2E7D32","#5B21B6","#B45309","#DC2626","#0891B2","#7C3AED","#059669"];
+const COLORS = [
+  // 藍色系
+  "#0066CC", "#1E40AF", "#2563EB", "#3B82F6", "#0EA5E9", "#0891B2", "#06B6D4",
+  // 綠色系
+  "#00875A", "#059669", "#10B981", "#16A34A", "#22C55E", "#65A30D", "#2E7D32",
+  // 紅/橘色系
+  "#DC2626", "#EF4444", "#E65100", "#F97316", "#EA580C", "#D97706", "#F59E0B",
+  // 紫色系
+  "#5B21B6", "#6D28D9", "#7C3AED", "#8B5CF6", "#A855F7", "#C026D3", "#DB2777",
+  // 棕/金色系
+  "#B45309", "#92400E", "#78350F", "#A16207", "#854D0E",
+  // 灰/中性色
+  "#475569", "#64748B", "#6B7280", "#374151", "#1F2937",
+];
 
 const getYouTubeId = (url) => {
   if (!url) return null;
@@ -510,19 +523,47 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
               </div>
             )}
           </div>
-          {videoId && (
-            <div style={{ marginTop:8, padding:"8px 12px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.textMid, lineHeight:1.5 }}>
-              💡 若影片無法播放（錯誤 153）：請在 YouTube 後台確認影片設為「<strong>公開</strong>」或「<strong>不公開</strong>」，並於影片設定中勾選「<strong>允許嵌入</strong>」。
-              <a href={`https://www.youtube.com/watch?v=${videoId}`} target="_blank" rel="noopener noreferrer" style={{ color:C.accent, marginLeft:6 }}>→ 直接到 YouTube 觀看</a>
-            </div>
-          )}
+          {/* YouTube 警告訊息已移除 */}
           <div style={{ marginTop:14 }}>
             <span style={{ fontSize:10, padding:"3px 7px", borderRadius:4, background:`${cat?.color||C.navy}12`, color:cat?.color||C.navy, fontWeight:500 }}>{cat?.name||"未分類"}</span>
             <span style={{ fontSize:11, color:C.textLight, marginLeft:8 }}>👁 {course.views||0}</span>
             <h1 style={{ fontSize:20, fontWeight:700, color:C.text, margin:"8px 0 4px" }}>{course.title}</h1>
             <p style={{ fontSize:13, color:C.navy, margin:"4px 0 0", fontWeight:500 }}>目前章節：{currentChapter?.title}</p>
             <p style={{ fontSize:12, color:C.textMid, margin:"4px 0 0" }}>講師：{course.instructor} · {course.duration} 分鐘</p>
+            {course.publishDate && (
+              <p style={{ fontSize:12, color:C.textLight, margin:"2px 0 0" }}>授課日期：{course.publishDate}</p>
+            )}
             <p style={{ fontSize:13, color:C.text, marginTop:10, lineHeight:1.7 }}>{course.description}</p>
+
+            {/* 授權聲明 */}
+            <div style={{ marginTop:14, padding:"10px 12px", background:`${C.danger}08`, borderRadius:7, border:`1px solid ${C.danger}20`, display:"flex", alignItems:"flex-start", gap:8 }}>
+              <span style={{ fontSize:16, color:C.danger, flexShrink:0 }}>🚫</span>
+              <p style={{ margin:0, fontSize:11, color:C.textMid, lineHeight:1.6 }}>
+                本課程由「<strong>{course.instructor || "課程作者"}</strong>」授權使用，您如需利用本作品，請另行向權利人取得授權。
+              </p>
+            </div>
+
+            {/* 課程附件下載區 */}
+            {course.files?.length > 0 && (
+              <div style={{ marginTop:14, padding:14, background:C.goldPale, borderRadius:9, border:`1px solid ${C.gold}40` }}>
+                <p style={{ fontSize:13, fontWeight:600, color:C.navy, margin:"0 0 8px" }}>📎 課程附件</p>
+                {course.files.map((f, i) => (
+                  <a
+                    key={i}
+                    href={f.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", marginBottom:5, background:"#FFF", borderRadius:6, border:`1px solid ${C.border}`, textDecoration:"none", color:C.text, transition:"all 0.2s" }}
+                    onMouseOver={e => { e.currentTarget.style.borderColor = C.gold; e.currentTarget.style.background = `${C.gold}08`; }}
+                    onMouseOut={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = "#FFF"; }}
+                  >
+                    <span style={{ fontSize:18 }}>📄</span>
+                    <span style={{ flex:1, fontSize:12, fontWeight:500 }}>{f.name}</span>
+                    <span style={{ fontSize:11, color:C.accent }}>開啟 ↗</span>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ flex:"0 0 250px" }}>
@@ -738,33 +779,46 @@ function CourseAdmin({ categories, courses }) {
   const [instructor, setInstructor] = useState("");
   const [description, setDescription] = useState("");
   const [chapters, setChapters] = useState([{ title:"第一章", duration:15, youtubeUrl:"" }]);
+  const [quiz, setQuiz] = useState([]);  // 測驗題目
+  const [files, setFiles] = useState([]);  // 課程附件（連結方式）
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setTitle(""); setCategory(categories[0]?.id || ""); setInstructor(""); setDescription("");
     setChapters([{ title:"第一章", duration:15, youtubeUrl:"" }]);
+    setQuiz([]);
+    setFiles([]);
     setEditing(null); setShowForm(false);
   };
   const startEdit = (c) => {
     setTitle(c.title); setCategory(c.category); setInstructor(c.instructor); setDescription(c.description);
     setChapters((c.chapters||[{title:"第一章",duration:15,youtubeUrl:""}]).map(ch => ({ ...ch, youtubeUrl: ch.youtubeUrl || "" })));
+    setQuiz(c.quiz || []);
+    setFiles(c.files || []);
     setEditing(c.id); setShowForm(true);
   };
 
   const save = async (publishNow = false) => {
     if (!title.trim()) { alert("請輸入課程名稱"); return; }
+    // 驗證測驗題目
+    for (let i = 0; i < quiz.length; i++) {
+      const q = quiz[i];
+      if (!q.q?.trim()) { alert(`第 ${i+1} 題題目不能空白`); return; }
+      if (q.options.some(opt => !opt?.trim())) { alert(`第 ${i+1} 題的選項不能空白`); return; }
+      if (q.answer === undefined || q.answer === null) { alert(`第 ${i+1} 題未選擇正確答案`); return; }
+    }
     setSaving(true);
     const totalDuration = chapters.reduce((s,c) => s + (+c.duration||0), 0);
     try {
       if (editing) {
-        await updateCourse(editing, { title, category, instructor, description, chapters, duration: totalDuration });
+        await updateCourse(editing, { title, category, instructor, description, chapters, quiz, files, duration: totalDuration });
       } else {
         await addCourse({
           title, category, instructor, description,
           duration: totalDuration, thumbnail:"📘", views:0,
           publishDate: new Date().toISOString().split("T")[0],
           status: publishNow ? "published" : "draft",
-          files:[], chapters, quiz:[]
+          files, chapters, quiz
         });
       }
       reset();
@@ -835,6 +889,101 @@ function CourseAdmin({ categories, courses }) {
             ))}
           </div>
 
+          {/* ══════ 測驗題目編輯區 ══════ */}
+          <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📝 課後測驗題目（共 {quiz.length} 題）</p>
+              <Btn onClick={() => setQuiz(p => [...p, { q:"", options:["","","",""], answer:0 }])} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增題目</Btn>
+            </div>
+            <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.6 }}>
+              💡 <strong>說明</strong>：每題有 4 個選項，請勾選正確答案。前台測驗需答對 60% 才算通過。沒有題目的課程，前台不會顯示測驗按鈕。
+            </div>
+            {quiz.length === 0 ? (
+              <div style={{ padding:20, textAlign:"center", color:C.textLight, fontSize:12, background:"#FFF", borderRadius:7, border:`1px dashed ${C.border}` }}>
+                目前尚無題目，點上方「+ 新增題目」開始建立
+              </div>
+            ) : quiz.map((q, qi) => (
+              <div key={qi} style={{ background:"#FFF", borderRadius:7, padding:12, marginBottom:8, border:`1px solid ${C.border}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>第 {qi+1} 題</span>
+                  <button onClick={() => setQuiz(p => p.filter((_,i) => i!==qi))} style={{ border:"none", background:"none", color:C.danger, fontSize:11, cursor:"pointer" }}>移除</button>
+                </div>
+                <Field label="題目">
+                  <input
+                    value={q.q}
+                    onChange={e => setQuiz(p => p.map((qq,i) => i===qi ? {...qq, q:e.target.value} : qq))}
+                    placeholder="例：5S 中的「整理」指的是什麼？"
+                    style={inp}
+                  />
+                </Field>
+                <div style={{ marginTop:4 }}>
+                  <p style={{ fontSize:11, color:C.textMid, marginBottom:6 }}>選項（請勾選正確答案）</p>
+                  {q.options.map((opt, oi) => (
+                    <div key={oi} style={{ display:"flex", alignItems:"center", gap:7, marginBottom:5 }}>
+                      <input
+                        type="radio"
+                        name={`q${qi}-answer`}
+                        checked={q.answer === oi}
+                        onChange={() => setQuiz(p => p.map((qq,i) => i===qi ? {...qq, answer:oi} : qq))}
+                        style={{ flexShrink:0, accentColor:C.navy, width:14, height:14 }}
+                      />
+                      <span style={{ fontSize:11, color:q.answer===oi?C.success:C.textLight, fontWeight:q.answer===oi?600:400, width:24 }}>{["A","B","C","D"][oi]}</span>
+                      <input
+                        value={opt}
+                        onChange={e => setQuiz(p => p.map((qq,i) => i===qi ? {...qq, options: qq.options.map((o,j) => j===oi ? e.target.value : o)} : qq))}
+                        placeholder={`選項 ${["A","B","C","D"][oi]}`}
+                        style={{ ...inp, padding:"6px 10px", fontSize:12 }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ══════ 課程附件區（連結方式）══════ */}
+          <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📎 課程附件（共 {files.length} 個）</p>
+              <Btn onClick={() => setFiles(p => [...p, { name:"", url:"" }])} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增附件</Btn>
+            </div>
+            <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.7 }}>
+              💡 <strong>附件連結說明：</strong>請於下方欄位貼上檔案的網址。可使用任何**可開啟的網址**（公司內部檔案伺服器、雲端硬碟分享連結、ERP 系統連結等皆可）。<br />
+              ⚠️ 請確認連結權限設定為「<strong>同仁可開啟</strong>」，否則使用者點擊會無法存取。
+            </div>
+            {files.length === 0 ? (
+              <div style={{ padding:20, textAlign:"center", color:C.textLight, fontSize:12, background:"#FFF", borderRadius:7, border:`1px dashed ${C.border}` }}>
+                目前沒有附件，點上方「+ 新增附件」加入連結
+              </div>
+            ) : files.map((f, fi) => (
+              <div key={fi} style={{ background:"#FFF", borderRadius:7, padding:12, marginBottom:8, border:`1px solid ${C.border}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>附件 {fi+1}</span>
+                  <button onClick={() => setFiles(p => p.filter((_,i) => i!==fi))} style={{ border:"none", background:"none", color:C.danger, fontSize:11, cursor:"pointer" }}>移除</button>
+                </div>
+                <Field label="檔案名稱（顯示給使用者看的）">
+                  <input
+                    value={f.name}
+                    onChange={e => setFiles(p => p.map((ff,i) => i===fi ? {...ff, name:e.target.value} : ff))}
+                    placeholder="例：5S 管理實務 講義.pdf"
+                    style={inp}
+                  />
+                </Field>
+                <Field label="檔案連結網址">
+                  <input
+                    value={f.url}
+                    onChange={e => setFiles(p => p.map((ff,i) => i===fi ? {...ff, url:e.target.value} : ff))}
+                    placeholder="https://example.com/檔案網址"
+                    style={inp}
+                  />
+                </Field>
+                {f.url && !/^https?:\/\//i.test(f.url) && (
+                  <p style={{ fontSize:10, color:C.danger, margin:"4px 0 0" }}>⚠️ 網址應以 http:// 或 https:// 開頭</p>
+                )}
+              </div>
+            ))}
+          </div>
+
           <div style={{ display:"flex", gap:6, marginTop:14, flexWrap:"wrap" }}>
             {editing ? (
               <Btn onClick={() => save(false)} variant="gold" disabled={saving}>{saving?"儲存中...":"儲存變更"}</Btn>
@@ -852,18 +1001,22 @@ function CourseAdmin({ categories, courses }) {
       <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", minWidth:700 }}>
           <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-            {["課程名稱","分類","講師","章節/影片","瀏覽","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
+            {["課程名稱","分類","講師","章節/影片","題目","附件","瀏覽","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
           </tr></thead>
           <tbody>
             {courses.map(c => {
               const cat = categories.find(cc => cc.id===c.category);
               const videoCount = (c.chapters||[]).filter(ch => getYouTubeId(ch.youtubeUrl)).length;
+              const quizCount = (c.quiz||[]).length;
+              const fileCount = (c.files||[]).length;
               return (
                 <tr key={c.id} style={{ borderBottom:`1px solid ${C.border}` }}>
                   <td style={{ padding:"8px 10px", fontSize:12, color:C.text }}>{c.title}</td>
                   <td style={{ padding:"8px 10px" }}><span style={{ fontSize:10, padding:"2px 6px", borderRadius:4, background:`${cat?.color||C.navy}12`, color:cat?.color||C.navy }}>{cat?.name||"未分類"}</span></td>
                   <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{c.instructor}</td>
                   <td style={{ padding:"8px 10px", fontSize:11, color:C.textMid }}>{videoCount}/{(c.chapters||[]).length} 🎬</td>
+                  <td style={{ padding:"8px 10px", fontSize:11, color: quizCount > 0 ? C.success : C.textLight }}>{quizCount > 0 ? `${quizCount} 📝` : "—"}</td>
+                  <td style={{ padding:"8px 10px", fontSize:11, color: fileCount > 0 ? C.success : C.textLight }}>{fileCount > 0 ? `${fileCount} 📎` : "—"}</td>
                   <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{c.views||0}</td>
                   <td style={{ padding:"8px 10px" }}>
                     <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:c.status==="published"?`${C.success}12`:`${C.warning}12`, color:c.status==="published"?C.success:C.warning }}>{c.status==="published"?"已上架":"草稿"}</span>
@@ -960,10 +1113,26 @@ function CategoryAdmin({ categories, courses }) {
             </div>
           </Field>
           <Field label="顏色">
-            <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+            <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:8 }}>
               {COLORS.map(co => (
-                <button key={co} onClick={() => setColor(co)} style={{ width:26, height:26, borderRadius:"50%", border:`3px solid ${color===co?"#333":"transparent"}`, background:co, cursor:"pointer" }} />
+                <button key={co} onClick={() => setColor(co)} title={co} style={{ width:26, height:26, borderRadius:"50%", border:`3px solid ${color===co?"#333":"transparent"}`, background:co, cursor:"pointer", padding:0 }} />
               ))}
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8, padding:"8px 10px", background:C.bg, borderRadius:6 }}>
+              <span style={{ fontSize:11, color:C.textMid }}>自訂顏色：</span>
+              <input
+                type="color"
+                value={color}
+                onChange={e => setColor(e.target.value)}
+                style={{ width:32, height:28, border:"none", padding:0, borderRadius:4, cursor:"pointer", background:"transparent" }}
+              />
+              <input
+                value={color}
+                onChange={e => /^#[0-9A-Fa-f]{6}$/.test(e.target.value) && setColor(e.target.value)}
+                placeholder="#000000"
+                style={{ width:90, padding:"4px 8px", fontSize:11, fontFamily:"monospace", borderRadius:5, border:`1px solid ${C.border}`, outline:"none" }}
+              />
+              <span style={{ display:"inline-block", width:20, height:20, borderRadius:"50%", background:color, border:`1px solid ${C.border}` }} />
             </div>
           </Field>
           <div style={{ display:"flex", gap:6, marginTop:10 }}>
@@ -1123,7 +1292,7 @@ function UserAdmin({ users }) {
             <Field label="姓名 *"><input value={name} onChange={e => setName(e.target.value)} style={inp} /></Field>
             <Field label="電子信箱 *"><input value={email} onChange={e => setEmail(e.target.value)} style={inp} placeholder="user@lkeng.com" disabled={!!editId} /></Field>
             {!editId && <Field label="密碼（留空 = 員工編號）"><input value={password} onChange={e => setPassword(e.target.value)} style={inp} placeholder="密碼" /></Field>}
-            <Field label="部門"><input value={department} onChange={e => setDepartment(e.target.value)} style={inp} placeholder="例：生產部" /></Field>
+            <Field label="處別"><input value={department} onChange={e => setDepartment(e.target.value)} style={inp} placeholder="例：管理處" /></Field>
             <Field label="角色">
               <select value={role} onChange={e => setRole(e.target.value)} style={inp}>
                 <option value="user">一般使用者</option>
@@ -1141,7 +1310,7 @@ function UserAdmin({ users }) {
       <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", minWidth:650 }}>
           <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-            {["員工編號","姓名","信箱","部門","角色","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
+            {["員工編號","姓名","信箱","處別","角色","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
           </tr></thead>
           <tbody>
             {users.map(u => (
