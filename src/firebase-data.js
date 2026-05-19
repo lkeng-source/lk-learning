@@ -190,6 +190,14 @@ export const watchUserHistory = (userId, callback) => {
   });
 };
 
+// 管理員：訂閱所有人的觀看紀錄
+export const watchAllWatchHistory = (callback) => {
+  return onSnapshot(collection(db, "watchHistory"), (snap) => {
+    const records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(records);
+  });
+};
+
 export const recordWatchProgress = async (userId, courseId, chapterIndex, progress) => {
   const docId = `${userId}_${courseId}`;
   const docRef = doc(db, "watchHistory", docId);
