@@ -12,11 +12,30 @@ import {
 
 /* ─── 配色 ─── */
 const C = {
-  navy: "#1B3A5C", navyDark: "#122840", navyLight: "#2A5080",
-  gold: "#D4A528", goldLight: "#F0C850", goldPale: "#FFF8E7",
-  accent: "#2980B9", bg: "#F5F6FA", card: "#FFFFFF",
-  text: "#1E293B", textMid: "#475569", textLight: "#94A3B8",
-  border: "#E2E8F0", success: "#16A34A", warning: "#D97706", danger: "#DC2626",
+  // 主色：較柔和的藍綠色，帶點青藍，更現代
+  navy: "#2C5F7C",        // 主藍（從深藏青改為較淺的鋼藍）
+  navyDark: "#1F4860",    // 漸層深色用
+  navyLight: "#4A8AAC",   // 漸層淺色用
+  // 金色保持（L&K 品牌色）
+  gold: "#D4A528",
+  goldLight: "#F0C850",
+  goldPale: "#FFF8E7",
+  // 點綴色 - 較活潑
+  accent: "#4A90E2",      // 清亮藍（用於連結、強調）
+  accentSoft: "#6FB8FF",  // 軟柔藍
+  // 背景與卡片
+  bg: "#F8F9FB",          // 偏暖的淺灰，比原本柔和
+  bgSoft: "#EEF2F7",      // 區塊背景
+  card: "#FFFFFF",
+  // 文字
+  text: "#2D3748",        // 主文字，比純黑柔和
+  textMid: "#5A6878",     // 中等
+  textLight: "#9BA8B8",   // 較淺
+  border: "#E4E9F0",      // 邊框，比原本柔和
+  // 狀態色
+  success: "#22A06B",     // 較鮮明的綠
+  warning: "#F0934A",     // 較柔和的橘
+  danger: "#E25555",      // 較柔和的紅
 };
 
 const ICONS = ["⚙️","✅","🛡️","🌿","💻","📊","🏭","🔬","📋","🎯","💡","🔧","📦","🧪","🏗️","📐"];
@@ -72,6 +91,34 @@ function Btn({children, onClick, variant="primary", disabled, style, type}) {
 
 function Field({ label, children }) {
   return <div style={{ marginBottom:10 }}><label style={{ display:"block", color:C.textMid, fontSize:12, marginBottom:4, fontWeight:500 }}>{label}</label>{children}</div>;
+}
+
+/* ─── 可摺疊面板（瀏覽紀錄 / 測驗紀錄用） ─── */
+function CollapsiblePanel({ title, icon, count, emptyText, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const hasContent = count > 0;
+  return (
+    <div style={{ background:C.bgSoft, borderRadius:9, border:`1px solid ${C.border}`, overflow:"hidden" }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", cursor:"pointer", background:"#FFF", borderBottom: open ? `1px solid ${C.border}` : "none", userSelect:"none" }}
+      >
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:16 }}>{icon}</span>
+          <h3 style={{ fontSize:14, fontWeight:600, color:C.text, margin:0 }}>{title}</h3>
+          <span style={{ fontSize:11, color:C.textLight, padding:"2px 8px", borderRadius:10, background:C.bg }}>{count} 筆</span>
+        </div>
+        <span style={{ fontSize:13, color:C.textLight, transition:"transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </div>
+      {open && (
+        <div style={{ padding:"10px 12px", maxHeight:400, overflowY:"auto" }}>
+          {hasContent ? children : (
+            <p style={{ color:C.textLight, fontSize:12, textAlign:"center", padding:"20px 0", margin:0 }}>{emptyText}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ══════════════════════════════════════
@@ -475,25 +522,66 @@ function Front({ currentUser, onLogout, setView }) {
               </div>
             ))}
           </div>
-          <h3 style={{ fontSize:14, fontWeight:600, color:C.text, marginBottom:8 }}>瀏覽紀錄</h3>
-          {userHistory.length===0 ? <p style={{ color:C.textLight, fontSize:12 }}>尚無觀看紀錄</p> : userHistory.map(h => {
-            const c = courses.find(cc => cc.id===h.courseId); if (!c) return null;
-            return <div key={h.courseId} onClick={() => { setSelectedCourse(c); setPage("course"); }} style={{ background:"#FFF", borderRadius:8, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, cursor:"pointer", marginBottom:6 }}>
-              <span style={{ fontSize:22 }}>{c.thumbnail}</span>
-              <div style={{ flex:1 }}><p style={{ margin:0, fontSize:12, fontWeight:600 }}>{c.title}</p><p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>學習 {h.totalTime} 分 · 進度 {h.progress}%</p></div>
-              <span style={{ fontSize:11, color:h.progress>=100?C.success:C.navy, fontWeight:500 }}>{h.progress>=100?"✅":"▶"}</span>
-            </div>;
-          })}
-          {userQuizzes.length > 0 && <>
-            <h3 style={{ fontSize:14, fontWeight:600, color:C.text, margin:"20px 0 8px" }}>測驗紀錄</h3>
-            {userQuizzes.map((q,i) => { const c = courses.find(cc=>cc.id===q.courseId); const pct = Math.round(q.score/q.total*100);
-              return <div key={i} style={{ background:"#FFF", borderRadius:8, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
-                <span style={{ fontSize:18 }}>{pct>=60?"🎉":"📖"}</span>
-                <div style={{ flex:1 }}><p style={{ margin:0, fontSize:12, fontWeight:600 }}>{c?.title||"未知"}</p><p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>{q.score}/{q.total}（{pct}%）</p></div>
-                <span style={{ fontSize:11, padding:"2px 7px", borderRadius:5, background:pct>=60?`${C.success}12`:`${C.danger}12`, color:pct>=60?C.success:C.danger, fontWeight:500 }}>{pct>=60?"通過":"未通過"}</span>
-              </div>;
-            })}
-          </>}
+          {/* 瀏覽紀錄 + 測驗紀錄：左右兩欄，可摺疊 */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(320px,1fr))", gap:14 }}>
+            <CollapsiblePanel
+              title="瀏覽紀錄"
+              icon="📚"
+              count={userHistory.length}
+              emptyText="尚無觀看紀錄"
+            >
+              {[...userHistory]
+                .sort((a,b) => {
+                  const ta = a.lastWatched?.toMillis ? a.lastWatched.toMillis() : 0;
+                  const tb = b.lastWatched?.toMillis ? b.lastWatched.toMillis() : 0;
+                  return tb - ta;
+                })
+                .map(h => {
+                  const c = courses.find(cc => cc.id===h.courseId);
+                  if (!c) return null;
+                  const dateStr = h.lastWatched?.toDate ? h.lastWatched.toDate().toLocaleDateString("zh-TW") : "";
+                  return (
+                    <div key={h.courseId} onClick={() => { setSelectedCourse(c); setPage("course"); }} style={{ background:"#FFF", borderRadius:7, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, cursor:"pointer", marginBottom:6 }}>
+                      <span style={{ fontSize:22 }}>{c.thumbnail}</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ margin:0, fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.title}</p>
+                        <p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>學習 {h.totalTime||0} 分 · 進度 {h.progress||0}% {dateStr && `· ${dateStr}`}</p>
+                      </div>
+                      <span style={{ fontSize:11, color:h.progress>=100?C.success:C.navy, fontWeight:500, flexShrink:0 }}>{h.progress>=100?"✅":"▶"}</span>
+                    </div>
+                  );
+                })}
+            </CollapsiblePanel>
+
+            <CollapsiblePanel
+              title="測驗紀錄"
+              icon="📝"
+              count={userQuizzes.length}
+              emptyText="尚無測驗紀錄"
+            >
+              {[...userQuizzes]
+                .sort((a,b) => {
+                  const ta = a.date?.toMillis ? a.date.toMillis() : 0;
+                  const tb = b.date?.toMillis ? b.date.toMillis() : 0;
+                  return tb - ta;
+                })
+                .map((q, i) => {
+                  const c = courses.find(cc => cc.id===q.courseId);
+                  const pct = Math.round(q.score/q.total*100);
+                  const dateStr = q.date?.toDate ? q.date.toDate().toLocaleDateString("zh-TW") : "";
+                  return (
+                    <div key={i} style={{ background:"#FFF", borderRadius:7, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+                      <span style={{ fontSize:20 }}>{pct>=60?"🎉":"📖"}</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ margin:0, fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c?.title||"未知"}</p>
+                        <p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>{q.score}/{q.total}（{pct}%）{dateStr && ` · ${dateStr}`}</p>
+                      </div>
+                      <span style={{ fontSize:11, padding:"2px 7px", borderRadius:5, background:pct>=60?`${C.success}12`:`${C.danger}12`, color:pct>=60?C.success:C.danger, fontWeight:500, flexShrink:0 }}>{pct>=60?"通過":"未通過"}</span>
+                    </div>
+                  );
+                })}
+            </CollapsiblePanel>
+          </div>
         </div>
       )}
 
@@ -506,15 +594,30 @@ function Front({ currentUser, onLogout, setView }) {
 function CoursePage({ categories, course, goBack, watchHistory, currentUser, recordWatch, saveQuiz }) {
   const [activeCh, setActiveCh] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
-  const progress = watchHistory[`${currentUser.id}_${course.id}`]?.progress || 0;
+  const historyRecord = watchHistory[`${currentUser.id}_${course.id}`];
+  const progress = historyRecord?.progress || 0;
+  const totalTime = historyRecord?.totalTime || 0;
   const cat = categories.find(c => c.id===course.category);
   const currentChapter = course.chapters?.[activeCh];
   const videoId = getYouTubeId(currentChapter?.youtubeUrl);
 
+  // 進度規則：依照「實際觀看時間 / 課程總時長」計算
+  // 觀看時間達 80% 即視為完成（100%）
+  const calculateProgress = (watchedMinutes, courseDuration) => {
+    if (!courseDuration || courseDuration <= 0) return 0;
+    const ratio = watchedMinutes / courseDuration;
+    // 觀看時間達 80% 即視為 100%
+    if (ratio >= 0.8) return 100;
+    // 線性換算：0~80% 觀看時間 → 0~100% 進度
+    return Math.min(100, Math.round((ratio / 0.8) * 100));
+  };
+
   useEffect(() => {
     if (videoId) {
-      const op = Math.min(100, Math.round((activeCh + 1)/(course.chapters?.length||1)*100));
-      recordWatch(course.id, activeCh, op);
+      // 每次切換章節時，記錄一次（totalTime 在後端會 +1）
+      // 進度依據累計觀看時間動態計算
+      const newProgress = calculateProgress(totalTime + 1, course.duration);
+      recordWatch(course.id, activeCh, newProgress);
     }
   }, [activeCh, videoId]);
 
@@ -590,7 +693,13 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
           <div style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}`, marginBottom:10 }}>
             <p style={{ margin:0, fontSize:12, fontWeight:600 }}>學習進度</p>
             <div style={{ marginTop:7, height:5, borderRadius:3, background:C.border }}><div style={{ height:"100%", borderRadius:3, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${progress}%`, transition:"width 0.5s" }} /></div>
-            <p style={{ margin:"3px 0 0", fontSize:11, color:C.textLight, textAlign:"right" }}>{progress}%</p>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:5 }}>
+              <span style={{ fontSize:10, color:C.textLight }}>觀看 {totalTime}/{course.duration||0} 分</span>
+              <span style={{ fontSize:11, color: progress>=100?C.success:C.textMid, fontWeight:600 }}>{progress}%</span>
+            </div>
+            <p style={{ margin:"6px 0 0", fontSize:9, color:C.textLight, lineHeight:1.4 }}>
+              💡 觀看時數達課程時長 80% 即視為完成
+            </p>
           </div>
           <div style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}`, marginBottom:10 }}>
             <p style={{ margin:"0 0 8px", fontSize:12, fontWeight:600 }}>課程章節</p>
