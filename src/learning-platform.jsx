@@ -5,7 +5,7 @@ import {
   getCurrentUserData, getAllUsers, watchAllUsers, createUserAccount, updateUserData, deleteUserData,
   watchCourses, addCourse, updateCourse, deleteCourse, incrementViews,
   watchCategories, addCategory, updateCategory, deleteCategory,
-  watchUserHistory, recordWatchProgress,
+  watchUserHistory, recordWatchProgress, watchAllWatchHistory,
   watchAllQuizResults, saveQuizResult,
   initializeDefaultData
 } from "./firebase-data";
@@ -40,6 +40,22 @@ const getYouTubeId = (url) => {
   const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^?&\s]+)/);
   return m ? m[1] : null;
 };
+
+/* ─── L&K Logo 元件 ─── */
+function LKLogo({ size = 36, color = "#D4A528", background = "transparent" }) {
+  return (
+    <div style={{ width: size, height: size, background, borderRadius: size * 0.2, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <svg viewBox="0 0 100 50" width={size * 1.8} height={size * 0.9} xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
+        <g fill={color} fontFamily="'Times New Roman', serif" fontWeight="bold">
+          <text x="0" y="42" fontSize="48" letterSpacing="-2">L</text>
+          <text x="34" y="42" fontSize="42" fontStyle="italic">&amp;</text>
+          <text x="64" y="42" fontSize="48" letterSpacing="-1">K</text>
+          <text x="95" y="14" fontSize="10">®</text>
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 const inp = { width:"100%", padding:"9px 12px", borderRadius:7, border:`1px solid ${C.border}`, fontSize:13, outline:"none", boxSizing:"border-box", background:"#FFF", color:C.text };
 
@@ -167,7 +183,9 @@ function Login({ error, onError }) {
       <div style={{ position:"absolute", top:-100, right:-100, width:350, height:350, borderRadius:"50%", background:`radial-gradient(circle, ${C.gold}18 0%, transparent 70%)` }} />
       <div style={{ position:"relative", width:"100%", maxWidth:400, padding:"36px 30px", borderRadius:18, background:"rgba(255,255,255,0.06)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", boxShadow:"0 24px 48px rgba(0,0,0,0.3)" }}>
         <div style={{ textAlign:"center", marginBottom:24 }}>
-          <div style={{ width:56, height:56, borderRadius:14, background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, margin:"0 auto 12px", boxShadow:`0 4px 16px ${C.gold}40` }}>🎓</div>
+          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"14px 22px", borderRadius:14, background:"#000", margin:"0 auto 12px", boxShadow:`0 4px 16px ${C.gold}40` }}>
+            <LKLogo size={40} color={C.gold} />
+          </div>
           <h1 style={{ color:"#FFF", fontSize:22, fontWeight:700, margin:0 }}>亞翔學習平台</h1>
           <p style={{ color:"rgba(255,255,255,0.5)", fontSize:12, marginTop:6 }}>L&K Engineering Learning</p>
         </div>
@@ -357,7 +375,9 @@ function Front({ currentUser, onLogout, setView }) {
 
       <div style={{ background:"#FFF", borderBottom:`2px solid ${C.gold}40`, padding:"0 20px", display:"flex", alignItems:"center", height:56, gap:12, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(0,0,0,0.04)", flexWrap:"wrap" }}>
         <div onClick={() => { setSelectedCourse(null); setPage("home"); }} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-          <div style={{ width:30, height:30, borderRadius:7, background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>🎓</div>
+          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"4px 8px", borderRadius:6, background:"#000" }}>
+            <LKLogo size={20} color={C.gold} />
+          </div>
           <span style={{ fontSize:15, fontWeight:700, color:C.navy }}>亞翔學習</span>
         </div>
         <div style={{ flex:1, maxWidth:300, minWidth:120 }}>
@@ -665,6 +685,7 @@ function Admin({ currentUser, onLogout, setView }) {
   const [courses, setCourses] = useState([]);
   const [users, setUsers] = useState([]);
   const [quizResults, setQuizResults] = useState({});
+  const [allWatchHistory, setAllWatchHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -675,6 +696,7 @@ function Admin({ currentUser, onLogout, setView }) {
       watchCourses((cs) => { setCourses(cs); onLoad(); }),
       watchAllUsers(setUsers),
       watchAllQuizResults(setQuizResults),
+      watchAllWatchHistory(setAllWatchHistory),
     ];
     return () => unsubs.forEach(u => u());
   }, []);
@@ -699,8 +721,10 @@ function Admin({ currentUser, onLogout, setView }) {
     <div style={{ display:"flex", minHeight:"100vh", background:C.bg, fontFamily:"'Noto Sans TC',sans-serif" }}>
       {showPwModal && <ChangePasswordModal currentUser={currentUser} onClose={() => setShowPwModal(false)} />}
       <div style={{ width:200, background:C.navy, color:"#FFF", display:"flex", flexDirection:"column", flexShrink:0 }}>
-        <div style={{ padding:"16px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
-          <div style={{ width:30, height:30, borderRadius:7, background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15 }}>🎓</div>
+        <div style={{ padding:"16px 14px", display:"flex", alignItems:"center", gap:10, borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"5px 9px", borderRadius:6, background:"#000" }}>
+            <LKLogo size={20} color={C.gold} />
+          </div>
           <div><p style={{ margin:0, fontSize:13, fontWeight:600 }}>管理後台</p><p style={{ margin:0, fontSize:9, opacity:0.4 }}>L&K Admin</p></div>
         </div>
         <div style={{ flex:1, padding:"8px 6px" }}>
@@ -722,7 +746,7 @@ function Admin({ currentUser, onLogout, setView }) {
         {tab==="courses" && <CourseAdmin categories={sortedCategories} courses={courses} />}
         {tab==="categories" && <CategoryAdmin categories={sortedCategories} courses={courses} />}
         {tab==="users" && <UserAdmin users={users} />}
-        {tab==="analytics" && <Analytics courses={courses} />}
+        {tab==="analytics" && <Analytics courses={courses} users={users} allWatchHistory={allWatchHistory} />}
         {tab==="quizzes" && <QuizRecords quizResults={quizResults} users={users} courses={courses} />}
       </div>
     </div>
@@ -1338,22 +1362,104 @@ function UserAdmin({ users }) {
   );
 }
 
-function Analytics({ courses }) {
+function Analytics({ courses, users, allWatchHistory }) {
+  const [selectedCourse, setSelectedCourse] = useState(null);
   const max = Math.max(...courses.map(c => c.views||0), 1);
+
+  // 計算每個課程的觀看者明細
+  const courseViewers = useMemo(() => {
+    const map = {};
+    allWatchHistory.forEach(record => {
+      if (!map[record.courseId]) map[record.courseId] = [];
+      map[record.courseId].push(record);
+    });
+    return map;
+  }, [allWatchHistory]);
+
+  // 點選課程後顯示明細
+  if (selectedCourse) {
+    const viewers = (courseViewers[selectedCourse.id] || []).map(r => {
+      const user = users.find(u => u.id === r.userId);
+      return {
+        ...r,
+        userName: user?.name || "未知使用者",
+        empNo: user?.empNo || "—",
+        department: user?.department || "—",
+      };
+    }).sort((a,b) => {
+      const ta = a.lastWatched?.toMillis ? a.lastWatched.toMillis() : 0;
+      const tb = b.lastWatched?.toMillis ? b.lastWatched.toMillis() : 0;
+      return tb - ta;
+    });
+
+    return (
+      <div>
+        <button onClick={() => setSelectedCourse(null)} style={{ border:"none", background:"none", color:C.navy, fontSize:13, cursor:"pointer", padding:0, fontWeight:500, marginBottom:12 }}>← 返回學習分析</button>
+        <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:6 }}>{selectedCourse.title}</h2>
+        <p style={{ fontSize:12, color:C.textLight, marginBottom:16 }}>共 {viewers.length} 筆觀看紀錄</p>
+
+        {viewers.length === 0 ? (
+          <div style={{ background:"#FFF", borderRadius:9, padding:36, border:`1px solid ${C.border}`, textAlign:"center", color:C.textLight }}>
+            <p style={{ fontSize:30, margin:0 }}>👀</p>
+            <p style={{ margin:"8px 0 0", fontSize:13 }}>還沒有人觀看這門課程</p>
+          </div>
+        ) : (
+          <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", minWidth:600 }}>
+              <thead>
+                <tr style={{ borderBottom:`1px solid ${C.border}`, background:C.bg }}>
+                  {["員工編號","姓名","處別","進度","學習時數","最後觀看"].map(h => <th key={h} style={{ padding:"10px 12px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {viewers.map((v,i) => (
+                  <tr key={i} style={{ borderBottom:`1px solid ${C.border}` }}>
+                    <td style={{ padding:"8px 12px", fontSize:12, color:C.text, fontFamily:"monospace" }}>{v.empNo}</td>
+                    <td style={{ padding:"8px 12px", fontSize:12, color:C.text, fontWeight:500 }}>{v.userName}</td>
+                    <td style={{ padding:"8px 12px", fontSize:12, color:C.textMid }}>{v.department}</td>
+                    <td style={{ padding:"8px 12px" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ flex:1, maxWidth:100, height:6, borderRadius:3, background:`${C.navy}10` }}>
+                          <div style={{ height:"100%", borderRadius:3, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${v.progress||0}%` }} />
+                        </div>
+                        <span style={{ fontSize:11, color: (v.progress||0)>=100?C.success:C.textMid, fontWeight:500, width:32, textAlign:"right" }}>{v.progress||0}%</span>
+                      </div>
+                    </td>
+                    <td style={{ padding:"8px 12px", fontSize:12, color:C.textMid }}>{v.totalTime || 0} 分</td>
+                    <td style={{ padding:"8px 12px", fontSize:11, color:C.textLight }}>
+                      {v.lastWatched?.toDate ? v.lastWatched.toDate().toLocaleString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:16 }}>學習分析</h2>
       <div style={{ background:"#FFF", borderRadius:9, padding:16, border:`1px solid ${C.border}` }}>
         <h3 style={{ color:C.text, fontSize:14, fontWeight:600, margin:"0 0 14px" }}>各課程瀏覽次數</h3>
+        <p style={{ fontSize:11, color:C.textLight, margin:"0 0 14px" }}>💡 點擊右側次數可查看明細</p>
         {[...courses].sort((a,b)=>(b.views||0)-(a.views||0)).map(c => (
-          <div key={c.id} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
-            <span style={{ width:130, fontSize:11, color:C.textMid, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flexShrink:0 }}>{c.title}</span>
-            <div style={{ flex:1, height:18, borderRadius:4, background:`${C.navy}08`, overflow:"hidden" }}>
-              <div style={{ height:"100%", borderRadius:4, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${(c.views||0)/max*100}%`, display:"flex", alignItems:"center", justifyContent:"flex-end", paddingRight:6 }}>
-                {(c.views||0)>50 && <span style={{ fontSize:9, color:"#FFF", fontWeight:600 }}>{c.views}</span>}
-              </div>
+          <div key={c.id} style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+            <span style={{ width:160, fontSize:13, color:C.text, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flexShrink:0 }}>{c.title}</span>
+            <div style={{ flex:1, height:24, borderRadius:6, background:`${C.navy}08`, overflow:"hidden", position:"relative" }}>
+              <div style={{ height:"100%", borderRadius:6, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${(c.views||0)/max*100}%`, transition:"width 0.5s" }} />
             </div>
-            {(c.views||0)<=50 && <span style={{ fontSize:10, color:C.textLight, width:28, textAlign:"right" }}>{c.views||0}</span>}
+            <button
+              onClick={() => setSelectedCourse(c)}
+              style={{ width:64, padding:"6px 10px", textAlign:"center", fontSize:18, fontWeight:700, color:C.navy, background:"#FFF", border:`1.5px solid ${C.gold}`, borderRadius:7, cursor:"pointer", transition:"all 0.2s" }}
+              onMouseOver={e => { e.currentTarget.style.background = C.goldPale; }}
+              onMouseOut={e => { e.currentTarget.style.background = "#FFF"; }}
+              title="點擊查看明細"
+            >
+              {c.views || 0}
+            </button>
           </div>
         ))}
       </div>
@@ -1362,31 +1468,182 @@ function Analytics({ courses }) {
 }
 
 function QuizRecords({ quizResults, users, courses }) {
-  const all = Object.values(quizResults).map(r => ({
-    ...r,
-    userName: users.find(u=>u.id===r.userId)?.name || r.userName || "未知",
-    courseName: courses.find(c=>c.id===r.courseId)?.title || "未知",
-    pct: Math.round((r.score||0)/(r.total||1)*100)
-  }));
+  const [filterUser, setFilterUser] = useState("");
+  const [filterCourse, setFilterCourse] = useState("");
+  const [filterResult, setFilterResult] = useState("all");  // all, pass, fail
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [selected, setSelected] = useState({});  // {recordId: true}
+
+  const all = useMemo(() => Object.values(quizResults).map(r => {
+    const user = users.find(u=>u.id===r.userId);
+    return {
+      ...r,
+      key: r.id || `${r.userId}_${r.courseId}`,
+      userName: user?.name || r.userName || "未知",
+      empNo: user?.empNo || "—",
+      department: user?.department || "—",
+      courseName: courses.find(c=>c.id===r.courseId)?.title || "未知",
+      pct: Math.round((r.score||0)/(r.total||1)*100),
+      dateObj: r.date?.toDate ? r.date.toDate() : null,
+    };
+  }).sort((a,b) => (b.dateObj?.getTime()||0) - (a.dateObj?.getTime()||0)), [quizResults, users, courses]);
+
+  const filtered = useMemo(() => {
+    return all.filter(r => {
+      if (filterUser && !(r.userName.includes(filterUser) || r.empNo.includes(filterUser))) return false;
+      if (filterCourse && r.courseId !== filterCourse) return false;
+      if (filterResult === "pass" && r.pct < 60) return false;
+      if (filterResult === "fail" && r.pct >= 60) return false;
+      if (filterDateFrom && r.dateObj) {
+        const from = new Date(filterDateFrom);
+        if (r.dateObj < from) return false;
+      }
+      if (filterDateTo && r.dateObj) {
+        const to = new Date(filterDateTo);
+        to.setHours(23,59,59);
+        if (r.dateObj > to) return false;
+      }
+      return true;
+    });
+  }, [all, filterUser, filterCourse, filterResult, filterDateFrom, filterDateTo]);
+
+  const allChecked = filtered.length > 0 && filtered.every(r => selected[r.key]);
+  const someChecked = filtered.some(r => selected[r.key]);
+  const selectedCount = filtered.filter(r => selected[r.key]).length;
+
+  const toggleAll = () => {
+    if (allChecked) {
+      const next = {...selected};
+      filtered.forEach(r => delete next[r.key]);
+      setSelected(next);
+    } else {
+      const next = {...selected};
+      filtered.forEach(r => { next[r.key] = true; });
+      setSelected(next);
+    }
+  };
+
+  const toggleOne = (key) => {
+    setSelected(p => ({...p, [key]: !p[key]}));
+  };
+
+  const resetFilter = () => {
+    setFilterUser(""); setFilterCourse(""); setFilterResult("all");
+    setFilterDateFrom(""); setFilterDateTo(""); setSelected({});
+  };
+
+  const exportExcel = () => {
+    const rowsToExport = selectedCount > 0 ? filtered.filter(r => selected[r.key]) : filtered;
+    if (rowsToExport.length === 0) { alert("沒有可匯出的資料"); return; }
+    const data = rowsToExport.map(r => ({
+      "員工編號": r.empNo,
+      "姓名": r.userName,
+      "處別": r.department,
+      "課程名稱": r.courseName,
+      "得分": r.score,
+      "滿分": r.total,
+      "百分比": `${r.pct}%`,
+      "結果": r.pct >= 60 ? "通過" : "未通過",
+      "測驗日期": r.dateObj ? r.dateObj.toLocaleString("zh-TW") : "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [{wch:10},{wch:10},{wch:12},{wch:25},{wch:8},{wch:8},{wch:8},{wch:8},{wch:20}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "測驗紀錄");
+    const filename = `亞翔學習平台_測驗紀錄_${new Date().toISOString().split("T")[0]}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  };
 
   return (
     <div>
-      <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:16 }}>測驗紀錄</h2>
-      {all.length===0 ? <div style={{ textAlign:"center", padding:36, color:C.textLight }}><p style={{ fontSize:30 }}>📝</p><p>尚無測驗紀錄</p></div> : (
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+        <h2 style={{ fontSize:18, fontWeight:700, color:C.text, margin:0 }}>測驗紀錄</h2>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          {(filterUser || filterCourse || filterResult !== "all" || filterDateFrom || filterDateTo) && (
+            <Btn onClick={resetFilter} variant="outline" style={{ fontSize:11 }}>✕ 清除篩選</Btn>
+          )}
+          <Btn onClick={exportExcel} variant="gold" style={{ fontSize:12 }}>
+            📥 匯出 Excel {selectedCount > 0 ? `（${selectedCount} 筆）` : `（全部 ${filtered.length} 筆）`}
+          </Btn>
+        </div>
+      </div>
+
+      {/* 篩選列 */}
+      <div style={{ background:"#FFF", borderRadius:9, padding:12, border:`1px solid ${C.border}`, marginBottom:12 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px,1fr))", gap:8 }}>
+          <div>
+            <label style={{ fontSize:10, color:C.textLight, display:"block", marginBottom:3 }}>🔍 員工 (姓名/編號)</label>
+            <input value={filterUser} onChange={e => setFilterUser(e.target.value)} placeholder="輸入姓名或員工編號" style={{ ...inp, padding:"6px 10px", fontSize:12 }} />
+          </div>
+          <div>
+            <label style={{ fontSize:10, color:C.textLight, display:"block", marginBottom:3 }}>📚 課程</label>
+            <select value={filterCourse} onChange={e => setFilterCourse(e.target.value)} style={{ ...inp, padding:"6px 10px", fontSize:12 }}>
+              <option value="">全部課程</option>
+              {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:10, color:C.textLight, display:"block", marginBottom:3 }}>✅ 結果</label>
+            <select value={filterResult} onChange={e => setFilterResult(e.target.value)} style={{ ...inp, padding:"6px 10px", fontSize:12 }}>
+              <option value="all">全部</option>
+              <option value="pass">通過</option>
+              <option value="fail">未通過</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:10, color:C.textLight, display:"block", marginBottom:3 }}>📅 起始日期</label>
+            <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{ ...inp, padding:"6px 10px", fontSize:12 }} />
+          </div>
+          <div>
+            <label style={{ fontSize:10, color:C.textLight, display:"block", marginBottom:3 }}>📅 結束日期</label>
+            <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{ ...inp, padding:"6px 10px", fontSize:12 }} />
+          </div>
+        </div>
+      </div>
+
+      <p style={{ fontSize:11, color:C.textLight, marginBottom:8 }}>共 {filtered.length} 筆紀錄（全部 {all.length} 筆）{selectedCount > 0 && <span style={{ color:C.navy, fontWeight:600 }}>· 已勾選 {selectedCount} 筆</span>}</p>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign:"center", padding:36, color:C.textLight, background:"#FFF", borderRadius:9, border:`1px solid ${C.border}` }}>
+          <p style={{ fontSize:30, margin:0 }}>📝</p>
+          <p style={{ margin:"8px 0 0" }}>{all.length === 0 ? "尚無測驗紀錄" : "沒有符合條件的紀錄"}</p>
+        </div>
+      ) : (
         <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:500 }}>
-            <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-              {["使用者","課程","分數","結果","日期"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
-            </tr></thead>
-            <tbody>{all.map((r,i) => (
-              <tr key={i} style={{ borderBottom:`1px solid ${C.border}` }}>
-                <td style={{ padding:"8px 10px", fontSize:12, color:C.text }}>{r.userName}</td>
-                <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{r.courseName}</td>
-                <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{r.score}/{r.total}（{r.pct}%）</td>
-                <td style={{ padding:"8px 10px" }}><span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:r.pct>=60?`${C.success}12`:`${C.danger}12`, color:r.pct>=60?C.success:C.danger }}>{r.pct>=60?"通過":"未通過"}</span></td>
-                <td style={{ padding:"8px 10px", fontSize:11, color:C.textLight }}>{r.date?.toDate ? r.date.toDate().toLocaleDateString("zh-TW") : "—"}</td>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:700 }}>
+            <thead>
+              <tr style={{ borderBottom:`1px solid ${C.border}`, background:C.bg }}>
+                <th style={{ padding:"10px 8px", textAlign:"center", width:40 }}>
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    ref={el => { if (el) el.indeterminate = !allChecked && someChecked; }}
+                    onChange={toggleAll}
+                    style={{ width:14, height:14, accentColor:C.navy, cursor:"pointer" }}
+                  />
+                </th>
+                {["員工編號","姓名","處別","課程","分數","結果","日期"].map(h => <th key={h} style={{ padding:"10px 12px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
               </tr>
-            ))}</tbody>
+            </thead>
+            <tbody>
+              {filtered.map((r,i) => (
+                <tr key={r.key} style={{ borderBottom:`1px solid ${C.border}`, background: selected[r.key] ? `${C.gold}08` : "transparent" }}>
+                  <td style={{ padding:"8px 8px", textAlign:"center" }}>
+                    <input type="checkbox" checked={!!selected[r.key]} onChange={() => toggleOne(r.key)} style={{ width:14, height:14, accentColor:C.navy, cursor:"pointer" }} />
+                  </td>
+                  <td style={{ padding:"8px 12px", fontSize:12, color:C.text, fontFamily:"monospace" }}>{r.empNo}</td>
+                  <td style={{ padding:"8px 12px", fontSize:12, color:C.text, fontWeight:500 }}>{r.userName}</td>
+                  <td style={{ padding:"8px 12px", fontSize:12, color:C.textMid }}>{r.department}</td>
+                  <td style={{ padding:"8px 12px", fontSize:12, color:C.textMid }}>{r.courseName}</td>
+                  <td style={{ padding:"8px 12px", fontSize:12, color:C.textMid }}>{r.score}/{r.total}（{r.pct}%）</td>
+                  <td style={{ padding:"8px 12px" }}>
+                    <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background: r.pct>=60?`${C.success}12`:`${C.danger}12`, color: r.pct>=60?C.success:C.danger, fontWeight:500 }}>{r.pct>=60?"通過":"未通過"}</span>
+                  </td>
+                  <td style={{ padding:"8px 12px", fontSize:11, color:C.textLight }}>{r.dateObj ? r.dateObj.toLocaleDateString("zh-TW") : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       )}
