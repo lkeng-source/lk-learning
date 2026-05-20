@@ -60,19 +60,88 @@ const getYouTubeId = (url) => {
   return m ? m[1] : null;
 };
 
-/* ─── L&K Logo 元件 ─── */
-function LKLogo({ size = 36, color = "#D4A528", background = "transparent" }) {
+/* ─── L&K Logo 元件（仿亞翔工程原版 logo）─── */
+function LKLogo({ size = 36, color = "#D4A528" }) {
+  // viewBox 比例設計：L、(&)、K、® 四個元素
+  // 整體比例約 寬:高 = 2.6:1
+  const w = size * 2.6;
+  const h = size;
   return (
-    <div style={{ width: size, height: size, background, borderRadius: size * 0.2, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-      <svg viewBox="0 0 100 50" width={size * 1.8} height={size * 0.9} xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
-        <g fill={color} fontFamily="'Times New Roman', serif" fontWeight="bold">
-          <text x="0" y="42" fontSize="48" letterSpacing="-2">L</text>
-          <text x="34" y="42" fontSize="42" fontStyle="italic">&amp;</text>
-          <text x="64" y="42" fontSize="48" letterSpacing="-1">K</text>
-          <text x="95" y="14" fontSize="10">®</text>
-        </g>
-      </svg>
-    </div>
+    <svg
+      viewBox="0 0 260 100"
+      width={w}
+      height={h}
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ display: "block", flexShrink: 0 }}
+    >
+      <g fill={color}>
+        {/* L 字母 */}
+        <text
+          x="5"
+          y="78"
+          fontSize="92"
+          fontFamily="'Times New Roman', 'Noto Serif TC', serif"
+          fontWeight="bold"
+          letterSpacing="-2"
+        >
+          L
+        </text>
+
+        {/* & 符號外的圓圈 */}
+        <circle
+          cx="120"
+          cy="55"
+          r="33"
+          fill="none"
+          stroke={color}
+          strokeWidth="3.5"
+        />
+        {/* & 符號 */}
+        <text
+          x="120"
+          y="74"
+          fontSize="52"
+          fontFamily="'Times New Roman', 'Noto Serif TC', serif"
+          fontWeight="bold"
+          fontStyle="italic"
+          textAnchor="middle"
+        >
+          &amp;
+        </text>
+
+        {/* K 字母 */}
+        <text
+          x="165"
+          y="78"
+          fontSize="92"
+          fontFamily="'Times New Roman', 'Noto Serif TC', serif"
+          fontWeight="bold"
+          letterSpacing="-1"
+        >
+          K
+        </text>
+
+        {/* ® 註冊商標（右上角，圈起來） */}
+        <circle
+          cx="240"
+          cy="22"
+          r="9"
+          fill="none"
+          stroke={color}
+          strokeWidth="1.5"
+        />
+        <text
+          x="240"
+          y="27"
+          fontSize="12"
+          fontFamily="'Times New Roman', serif"
+          fontWeight="bold"
+          textAnchor="middle"
+        >
+          R
+        </text>
+      </g>
+    </svg>
   );
 }
 
@@ -230,8 +299,8 @@ function Login({ error, onError }) {
       <div style={{ position:"absolute", top:-100, right:-100, width:350, height:350, borderRadius:"50%", background:`radial-gradient(circle, ${C.gold}18 0%, transparent 70%)` }} />
       <div style={{ position:"relative", width:"100%", maxWidth:400, padding:"36px 30px", borderRadius:18, background:"rgba(255,255,255,0.06)", backdropFilter:"blur(20px)", border:"1px solid rgba(255,255,255,0.1)", boxShadow:"0 24px 48px rgba(0,0,0,0.3)" }}>
         <div style={{ textAlign:"center", marginBottom:24 }}>
-          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"14px 22px", borderRadius:14, background:"#000", margin:"0 auto 12px", boxShadow:`0 4px 16px ${C.gold}40` }}>
-            <LKLogo size={40} color={C.gold} />
+          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px" }}>
+            <LKLogo size={50} color={C.gold} />
           </div>
           <h1 style={{ color:"#FFF", fontSize:22, fontWeight:700, margin:0 }}>亞翔學習平台</h1>
           <p style={{ color:"rgba(255,255,255,0.5)", fontSize:12, marginTop:6 }}>L&K Engineering Learning</p>
@@ -421,10 +490,8 @@ function Front({ currentUser, onLogout, setView }) {
       {showPwModal && <ChangePasswordModal currentUser={currentUser} onClose={() => setShowPwModal(false)} force={currentUser.mustChangePw} />}
 
       <div style={{ background:"#FFF", borderBottom:`2px solid ${C.gold}40`, padding:"0 20px", display:"flex", alignItems:"center", height:56, gap:12, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(0,0,0,0.04)", flexWrap:"wrap" }}>
-        <div onClick={() => { setSelectedCourse(null); setPage("home"); }} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"4px 8px", borderRadius:6, background:"#000" }}>
-            <LKLogo size={20} color={C.gold} />
-          </div>
+        <div onClick={() => { setSelectedCourse(null); setPage("home"); }} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
+          <LKLogo size={22} color={C.gold} />
           <span style={{ fontSize:15, fontWeight:700, color:C.navy }}>亞翔學習</span>
         </div>
         <div style={{ flex:1, maxWidth:300, minWidth:120 }}>
@@ -831,9 +898,7 @@ function Admin({ currentUser, onLogout, setView }) {
       {showPwModal && <ChangePasswordModal currentUser={currentUser} onClose={() => setShowPwModal(false)} />}
       <div style={{ width:200, background:C.navy, color:"#FFF", display:"flex", flexDirection:"column", flexShrink:0 }}>
         <div style={{ padding:"16px 14px", display:"flex", alignItems:"center", gap:10, borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
-          <div style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"5px 9px", borderRadius:6, background:"#000" }}>
-            <LKLogo size={20} color={C.gold} />
-          </div>
+          <LKLogo size={22} color={C.gold} />
           <div><p style={{ margin:0, fontSize:13, fontWeight:600 }}>管理後台</p><p style={{ margin:0, fontSize:9, opacity:0.4 }}>L&K Admin</p></div>
         </div>
         <div style={{ flex:1, padding:"8px 6px" }}>
