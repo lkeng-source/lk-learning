@@ -240,6 +240,21 @@ export const saveQuizResult = async (userId, courseId, score, total, userName, a
   });
 };
 
+// 刪除單筆測驗紀錄
+export const deleteQuizResult = async (docId) => {
+  await deleteDoc(doc(db, "quizResults", docId));
+};
+
+// 批次刪除多筆測驗紀錄
+export const deleteQuizResultsBatch = async (docIds) => {
+  if (!Array.isArray(docIds) || docIds.length === 0) return;
+  const batch = writeBatch(db);
+  docIds.forEach(id => {
+    batch.delete(doc(db, "quizResults", id));
+  });
+  await batch.commit();
+};
+
 // ───────────────────────────────────────────
 // 初始化預設資料（第一次使用時呼叫）
 // ───────────────────────────────────────────
