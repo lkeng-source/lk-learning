@@ -226,7 +226,7 @@ export const watchAllQuizResults = (callback) => {
   });
 };
 
-export const saveQuizResult = async (userId, courseId, score, total, userName) => {
+export const saveQuizResult = async (userId, courseId, score, total, userName, answers, questionsSnapshot) => {
   const docId = `${userId}_${courseId}`;
   await setDoc(doc(db, "quizResults", docId), {
     userId,
@@ -234,6 +234,8 @@ export const saveQuizResult = async (userId, courseId, score, total, userName) =
     score,
     total,
     userName,
+    answers: answers || {},  // 學員的作答：{ "0": 2, "1": 0, ... } 題號→選的選項
+    questionsSnapshot: questionsSnapshot || [],  // 當時測驗的題目快照（避免題目後來被改動）
     date: serverTimestamp(),
   });
 };
