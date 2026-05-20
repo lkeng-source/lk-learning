@@ -54,10 +54,87 @@ const COLORS = [
   "#475569", "#64748B", "#6B7280", "#374151", "#1F2937",
 ];
 
+// 影片連結解析（支援 YouTube、OneDrive、SharePoint、Vimeo 等）
+// 回傳 { type, embedUrl, originalUrl } 或 null
+const parseVideoUrl = (url) => {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  // 如果是完整 iframe 嵌入碼，先抽出 src
+  let workUrl = trimmed;
+  if (workUrl.includes("<iframe")) {
+    const srcMatch = workUrl.match(/src=["']([^"']+)["']/i);
+    if (srcMatch) workUrl = srcMatch[1];
+  }
+
+  // 1. YouTube
+  const ytMatch = workUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^?&\s]+)/);
+  if (ytMatch) {
+    return {
+      type: "youtube",
+      videoId: ytMatch[1],
+      embedUrl: `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`,
+      originalUrl: workUrl,
+    };
+  }
+
+  // 2. OneDrive embed (onedrive.live.com/embed?...)
+  if (/onedrive\.live\.com\/embed/i.test(workUrl)) {
+    return {
+      type: "onedrive",
+      embedUrl: workUrl,
+      originalUrl: workUrl,
+    };
+  }
+
+  // 3. OneDrive share link (1drv.ms 或 onedrive.live.com 但沒有 embed)
+  if (/1drv\.ms|onedrive\.live\.com/i.test(workUrl)) {
+    // 1drv.ms 的分享連結加上 ?embed 也能嵌入（但不是所有都行）
+    // 安全做法：以「外部連結」模式呈現
+    return {
+      type: "external",
+      embedUrl: workUrl,
+      originalUrl: workUrl,
+    };
+  }
+
+  // 4. SharePoint (公司 SharePoint 影片)
+  if (/sharepoint\.com.*\/embed/i.test(workUrl) || /sharepoint\.com.*\/video/i.test(workUrl)) {
+    return {
+      type: "sharepoint",
+      embedUrl: workUrl,
+      originalUrl: workUrl,
+    };
+  }
+
+  // 5. Vimeo
+  const vimMatch = workUrl.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (vimMatch) {
+    return {
+      type: "vimeo",
+      videoId: vimMatch[1],
+      embedUrl: `https://player.vimeo.com/video/${vimMatch[1]}`,
+      originalUrl: workUrl,
+    };
+  }
+
+  // 6. 其他：當作外部連結
+  if (/^https?:\/\//i.test(workUrl)) {
+    return {
+      type: "external",
+      embedUrl: workUrl,
+      originalUrl: workUrl,
+    };
+  }
+
+  return null;
+};
+
+// 保留向後相容
 const getYouTubeId = (url) => {
-  if (!url) return null;
-  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^?&\s]+)/);
-  return m ? m[1] : null;
+  const parsed = parseVideoUrl(url);
+  return parsed?.type === "youtube" ? parsed.videoId : null;
 };
 
 /* ─── L&K Logo 元件（仿亞翔工程原版 logo）─── */
@@ -666,7 +743,8 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
   const totalTime = historyRecord?.totalTime || 0;
   const cat = categories.find(c => c.id===course.category);
   const currentChapter = course.chapters?.[activeCh];
-  const videoId = getYouTubeId(currentChapter?.youtubeUrl);
+  const videoInfo = parseVideoUrl(currentChapter?.youtubeUrl);  // 欄位名仍叫 youtubeUrl 是為了向後相容
+  const hasEmbed = videoInfo && (videoInfo.type === "youtube" || videoInfo.type === "onedrive" || videoInfo.type === "sharepoint" || videoInfo.type === "vimeo");
 
   // 進度規則：依照「實際觀看時間 / 課程總時長」計算
   // 觀看時間達 80% 即視為完成（100%）
@@ -680,15 +758,25 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
   };
 
   useEffect(() => {
-    if (videoId) {
+    if (videoInfo) {
       // 每次切換章節時，記錄一次（totalTime 在後端會 +1）
       // 進度依據累計觀看時間動態計算
       const newProgress = calculateProgress(totalTime + 1, course.duration);
       recordWatch(course.id, activeCh, newProgress);
     }
-  }, [activeCh, videoId]);
+  }, [activeCh, videoInfo?.embedUrl]);
 
   if (showQuiz) return <Quiz course={course} goBack={() => setShowQuiz(false)} saveQuiz={saveQuiz} />;
+
+  // 影片平台標籤
+  const platformLabels = {
+    youtube: { name: "YouTube", color: "#FF0000", icon: "▶" },
+    onedrive: { name: "OneDrive", color: "#0078D4", icon: "☁" },
+    sharepoint: { name: "SharePoint", color: "#0078D4", icon: "☁" },
+    vimeo: { name: "Vimeo", color: "#1AB7EA", icon: "▶" },
+    external: { name: "外部連結", color: "#666666", icon: "🔗" },
+  };
+  const platform = videoInfo ? platformLabels[videoInfo.type] : null;
 
   return (
     <div style={{ padding:"24px 20px" }}>
@@ -696,15 +784,29 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
       <div style={{ display:"flex", gap:18, flexWrap:"wrap" }}>
         <div style={{ flex:"1 1 380px", minWidth:0 }}>
           <div style={{ background:"#000", borderRadius:10, aspectRatio:"16/9", overflow:"hidden", position:"relative" }}>
-            {videoId ? (
+            {hasEmbed ? (
               <iframe
-                key={videoId}
-                src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
+                key={videoInfo.embedUrl}
+                src={videoInfo.embedUrl}
                 title={currentChapter.title}
                 style={{ width:"100%", height:"100%", border:"none" }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                 allowFullScreen
               />
+            ) : videoInfo?.type === "external" ? (
+              <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"#FFF", background:"linear-gradient(135deg, #1a1a1a, #2a2a2a)", padding:24 }}>
+                <span style={{ fontSize:52, marginBottom:14 }}>🎬</span>
+                <p style={{ fontSize:14, margin:"0 0 4px", textAlign:"center" }}>{currentChapter.title}</p>
+                <p style={{ fontSize:11, opacity:0.5, margin:"0 0 16px", textAlign:"center" }}>影片來源：{platform?.name || "外部連結"}</p>
+                <a
+                  href={videoInfo.embedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ padding:"10px 24px", background:C.gold, color:"#FFF", borderRadius:8, textDecoration:"none", fontSize:13, fontWeight:600, boxShadow:`0 4px 12px ${C.gold}40` }}
+                >
+                  ▶ 在新分頁播放影片
+                </a>
+              </div>
             ) : (
               <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"#FFF", background:"#1a1a1a" }}>
                 <span style={{ fontSize:42 }}>📹</span>
@@ -1064,8 +1166,15 @@ function CourseAdmin({ categories, courses }) {
 
           <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-              <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📋 章節設定（每章節對應一支 YouTube 影片）</p>
+              <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📋 章節設定（每章節對應一支影片）</p>
               <Btn onClick={addChapter} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增章節</Btn>
+            </div>
+            <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.7 }}>
+              💡 <strong>支援的影片來源：</strong><br />
+              <strong>▶ YouTube</strong>：貼上影片網址（公開或不公開且允許嵌入）<br />
+              <strong>☁ OneDrive / SharePoint</strong>：在影片上點「Embed 嵌入」，複製 iframe 嵌入碼或 src 網址<br />
+              <strong>▶ Vimeo</strong>：貼上影片網址<br />
+              <strong>🔗 其他連結</strong>：會以「新分頁播放」按鈕呈現
             </div>
             {chapters.map((ch, idx) => (
               <div key={idx} style={{ background:"#FFF", borderRadius:7, padding:12, marginBottom:8, border:`1px solid ${C.border}` }}>
@@ -1077,12 +1186,25 @@ function CourseAdmin({ categories, courses }) {
                   <input value={ch.title} onChange={e => updateChapter(idx, "title", e.target.value)} placeholder="章節名稱" style={inp} />
                   <input type="number" value={ch.duration} onChange={e => updateChapter(idx, "duration", +e.target.value||0)} placeholder="時長(分)" style={inp} />
                 </div>
-                <input value={ch.youtubeUrl} onChange={e => updateChapter(idx, "youtubeUrl", e.target.value)} placeholder="🎬 YouTube 影片網址" style={inp} />
-                {ch.youtubeUrl && (
-                  getYouTubeId(ch.youtubeUrl)
-                    ? <p style={{ fontSize:10, color:C.success, margin:"4px 0 0" }}>✅ 影片 ID 已偵測：{getYouTubeId(ch.youtubeUrl)}</p>
-                    : <p style={{ fontSize:10, color:C.danger, margin:"4px 0 0" }}>⚠️ 網址格式無法識別</p>
-                )}
+                <input value={ch.youtubeUrl} onChange={e => updateChapter(idx, "youtubeUrl", e.target.value)} placeholder="🎬 影片網址（YouTube / OneDrive 嵌入碼 / SharePoint 等）" style={inp} />
+                {ch.youtubeUrl && (() => {
+                  const info = parseVideoUrl(ch.youtubeUrl);
+                  if (!info) return <p style={{ fontSize:10, color:C.danger, margin:"4px 0 0" }}>⚠️ 網址格式無法識別</p>;
+                  const labels = {
+                    youtube: { name:"YouTube", icon:"▶", canEmbed:true },
+                    onedrive: { name:"OneDrive 嵌入", icon:"☁", canEmbed:true },
+                    sharepoint: { name:"SharePoint", icon:"☁", canEmbed:true },
+                    vimeo: { name:"Vimeo", icon:"▶", canEmbed:true },
+                    external: { name:"外部連結（新分頁開啟）", icon:"🔗", canEmbed:false },
+                  };
+                  const lbl = labels[info.type];
+                  return (
+                    <p style={{ fontSize:10, color:lbl.canEmbed?C.success:C.warning, margin:"4px 0 0" }}>
+                      {lbl.canEmbed ? "✅" : "⚠️"} 已偵測：{lbl.icon} {lbl.name}
+                      {!lbl.canEmbed && <span style={{ color:C.textLight, marginLeft:6 }}>（無法直接嵌入，將顯示「新分頁播放」按鈕）</span>}
+                    </p>
+                  );
+                })()}
               </div>
             ))}
           </div>
