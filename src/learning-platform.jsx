@@ -479,6 +479,7 @@ function Front({ currentUser, onLogout, setView }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("all");
   const [showPwModal, setShowPwModal] = useState(currentUser.mustChangePw || false);
+  const [quizDetailRecord, setQuizDetailRecord] = useState(null);  // 查看自己過往的測驗詳解
 
   // 即時資料訂閱
   const [categories, setCategories] = useState([]);
@@ -533,9 +534,9 @@ function Front({ currentUser, onLogout, setView }) {
     }
   };
 
-  const handleSaveQuiz = async (courseId, score, total) => {
+  const handleSaveQuiz = async (courseId, score, total, answers, questionsSnapshot) => {
     try {
-      await saveQuizResult(currentUser.id, courseId, score, total, currentUser.name);
+      await saveQuizResult(currentUser.id, courseId, score, total, currentUser.name, answers, questionsSnapshot);
     } catch (e) {
       console.error("Save quiz failed:", e);
     }
@@ -713,6 +714,15 @@ function Front({ currentUser, onLogout, setView }) {
                   const c = courses.find(cc => cc.id===q.courseId);
                   const pct = Math.round(q.score/q.total*100);
                   const dateStr = q.date?.toDate ? q.date.toDate().toLocaleDateString("zh-TW") : "";
+                  // 準備傳給 Modal 的物件
+                  const recordForModal = {
+                    ...q,
+                    userName: currentUser.name,
+                    empNo: currentUser.empNo,
+                    courseName: c?.title || "未知",
+                    pct,
+                    dateObj: q.date?.toDate ? q.date.toDate() : null,
+                  };
                   return (
                     <div key={i} style={{ background:"#FFF", borderRadius:7, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
                       <span style={{ fontSize:20 }}>{pct>=60?"🎉":"📖"}</span>
@@ -720,6 +730,7 @@ function Front({ currentUser, onLogout, setView }) {
                         <p style={{ margin:0, fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c?.title||"未知"}</p>
                         <p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>{q.score}/{q.total}（{pct}%）{dateStr && ` · ${dateStr}`}</p>
                       </div>
+                      <button onClick={() => setQuizDetailRecord(recordForModal)} style={{ padding:"3px 8px", fontSize:10, border:`1px solid ${C.border}`, background:"#FFF", borderRadius:5, cursor:"pointer", color:C.navy, flexShrink:0 }}>🔍 詳解</button>
                       <span style={{ fontSize:11, padding:"2px 7px", borderRadius:5, background:pct>=60?`${C.success}12`:`${C.danger}12`, color:pct>=60?C.success:C.danger, fontWeight:500, flexShrink:0 }}>{pct>=60?"通過":"未通過"}</span>
                     </div>
                   );
@@ -728,6 +739,9 @@ function Front({ currentUser, onLogout, setView }) {
           </div>
         </div>
       )}
+
+      {/* 學員自己的測驗詳解彈窗 */}
+      {quizDetailRecord && <QuizDetailModal record={quizDetailRecord} courses={courses} onClose={() => setQuizDetailRecord(null)} />}
 
       {page==="course" && selectedCourse && <CoursePage {...{categories:sortedCategories,course:selectedCourse,goBack:()=>{setSelectedCourse(null);setPage("home");},watchHistory,currentUser,recordWatch:handleRecordWatch,saveQuiz:handleSaveQuiz}} />}
     </div>
@@ -900,6 +914,8 @@ function Quiz({ course, goBack, saveQuiz }) {
   const [answers, setAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showReview, setShowReview] = useState(false);  // 控制是否顯示詳解
+
   const score = submitted ? course.quiz.reduce((s,q,i) => s + (answers[i]===q.answer?1:0), 0) : 0;
   const pct = Math.round(score/course.quiz.length*100);
 
@@ -907,7 +923,8 @@ function Quiz({ course, goBack, saveQuiz }) {
     let s=0; course.quiz.forEach((q,i) => { if(answers[i]===q.answer) s++; });
     setSubmitting(true);
     try {
-      await saveQuiz(course.id, s, course.quiz.length);
+      // 也存學員的作答和題目快照
+      await saveQuiz(course.id, s, course.quiz.length, answers, course.quiz);
       setSubmitted(true);
     } catch (e) {
       alert("儲存測驗結果失敗：" + e.message);
@@ -915,21 +932,82 @@ function Quiz({ course, goBack, saveQuiz }) {
     setSubmitting(false);
   };
 
+  const reset = () => {
+    setAnswers({});
+    setSubmitted(false);
+    setShowReview(false);
+  };
+
   return (
-    <div style={{ padding:"24px 20px", maxWidth:640, margin:"0 auto" }}>
+    <div style={{ padding:"24px 20px", maxWidth:720, margin:"0 auto" }}>
       <button onClick={goBack} style={{ border:"none", background:"none", color:C.navy, fontSize:12, cursor:"pointer", padding:0, fontWeight:500, marginBottom:12 }}>← 返回課程</button>
       <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>📝 {course.title} — 課後測驗</h2>
       <p style={{ color:C.textLight, fontSize:12, marginBottom:18 }}>共 {course.quiz.length} 題，及格 60%</p>
+
       {submitted ? (
-        <div style={{ textAlign:"center", padding:32, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}` }}>
-          <span style={{ fontSize:42 }}>{pct>=60?"🎉":"📖"}</span>
-          <h3 style={{ fontSize:20, fontWeight:700, color:C.text, marginTop:12 }}>{pct>=60?"恭喜通過！":"再接再厲！"}</h3>
-          <p style={{ fontSize:15, color:C.textMid, marginTop:4 }}>得分：{score}/{course.quiz.length}（{pct}%）</p>
-          <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:16 }}>
-            <Btn onClick={() => { setAnswers({}); setSubmitted(false); }} variant="outline">重新測驗</Btn>
-            <Btn onClick={goBack}>返回課程</Btn>
+        <>
+          {/* 結果摘要 */}
+          <div style={{ textAlign:"center", padding:28, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}`, marginBottom:14 }}>
+            <span style={{ fontSize:48 }}>{pct>=60?"🎉":"📖"}</span>
+            <h3 style={{ fontSize:22, fontWeight:700, color:C.text, marginTop:12 }}>{pct>=60?"恭喜通過！":"再接再厲！"}</h3>
+            <p style={{ fontSize:15, color:C.textMid, marginTop:4 }}>得分：<strong style={{ color:pct>=60?C.success:C.danger }}>{score}/{course.quiz.length}</strong>（{pct}%）</p>
+            <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:18, flexWrap:"wrap" }}>
+              <Btn onClick={() => setShowReview(!showReview)} variant={showReview?"outline":"gold"}>
+                {showReview ? "🔼 收合詳解" : "🔍 查看答題詳解"}
+              </Btn>
+              <Btn onClick={reset} variant="outline">重新測驗</Btn>
+              <Btn onClick={goBack}>返回課程</Btn>
+            </div>
           </div>
-        </div>
+
+          {/* 答題詳解 */}
+          {showReview && (
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              <div style={{ padding:"10px 14px", background:`${C.accent}10`, borderRadius:8, fontSize:11, color:C.navy, lineHeight:1.7 }}>
+                💡 <strong>詳解說明</strong>：✅ 綠底為正確答案，❌ 紅底為您選錯的答案，⚪ 灰底為其他選項。
+              </div>
+              {course.quiz.map((q, qi) => {
+                const userAnswer = answers[qi];
+                const isCorrect = userAnswer === q.answer;
+                return (
+                  <div key={qi} style={{ background:"#FFF", borderRadius:9, padding:16, border:`1px solid ${isCorrect?C.success:C.danger}40` }}>
+                    <div style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:10 }}>
+                      <span style={{ fontSize:14, padding:"3px 9px", borderRadius:6, background:isCorrect?`${C.success}15`:`${C.danger}15`, color:isCorrect?C.success:C.danger, fontWeight:600, flexShrink:0 }}>
+                        {isCorrect ? "✓ 答對" : "✗ 答錯"}
+                      </span>
+                      <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text, flex:1 }}>{qi+1}. {q.q}</p>
+                    </div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                      {q.options.map((opt, oi) => {
+                        const isUserPick = userAnswer === oi;
+                        const isCorrectAnswer = q.answer === oi;
+                        let style = { background:"transparent", border:`1px solid ${C.border}`, color:C.text };
+                        let prefix = ["A", "B", "C", "D"][oi];
+                        let suffix = null;
+
+                        if (isCorrectAnswer) {
+                          style = { background:`${C.success}10`, border:`1.5px solid ${C.success}`, color:C.text };
+                          suffix = <span style={{ fontSize:11, color:C.success, fontWeight:600, marginLeft:"auto", flexShrink:0 }}>✓ 正確答案</span>;
+                        } else if (isUserPick) {
+                          style = { background:`${C.danger}10`, border:`1.5px solid ${C.danger}`, color:C.text };
+                          suffix = <span style={{ fontSize:11, color:C.danger, fontWeight:600, marginLeft:"auto", flexShrink:0 }}>✗ 您的答案</span>;
+                        }
+
+                        return (
+                          <div key={oi} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:6, ...style }}>
+                            <span style={{ width:22, height:22, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:600, color: isCorrectAnswer?C.success: isUserPick?C.danger:C.textLight, border:`1.5px solid ${isCorrectAnswer?C.success: isUserPick?C.danger:C.border}`, flexShrink:0 }}>{prefix}</span>
+                            <span style={{ fontSize:12 }}>{opt}</span>
+                            {suffix}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
           {course.quiz.map((q,qi) => (
@@ -1770,6 +1848,7 @@ function QuizRecords({ quizResults, users, courses }) {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [selected, setSelected] = useState({});  // {recordId: true}
+  const [detailRecord, setDetailRecord] = useState(null);  // 查看詳解的紀錄
 
   const all = useMemo(() => Object.values(quizResults).map(r => {
     const user = users.find(u=>u.id===r.userId);
@@ -1919,7 +1998,7 @@ function QuizRecords({ quizResults, users, courses }) {
                     style={{ width:14, height:14, accentColor:C.navy, cursor:"pointer" }}
                   />
                 </th>
-                {["員工編號","姓名","處別","課程","分數","結果","日期"].map(h => <th key={h} style={{ padding:"10px 12px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
+                {["員工編號","姓名","處別","課程","分數","結果","日期","操作"].map(h => <th key={h} style={{ padding:"10px 12px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -1937,12 +2016,121 @@ function QuizRecords({ quizResults, users, courses }) {
                     <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background: r.pct>=60?`${C.success}12`:`${C.danger}12`, color: r.pct>=60?C.success:C.danger, fontWeight:500 }}>{r.pct>=60?"通過":"未通過"}</span>
                   </td>
                   <td style={{ padding:"8px 12px", fontSize:11, color:C.textLight }}>{r.dateObj ? r.dateObj.toLocaleDateString("zh-TW") : "—"}</td>
+                  <td style={{ padding:"8px 12px" }}>
+                    <Btn onClick={() => setDetailRecord(r)} variant="outline" style={{ padding:"3px 8px", fontSize:10 }}>
+                      🔍 看答題
+                    </Btn>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {/* 答題詳解彈窗 */}
+      {detailRecord && <QuizDetailModal record={detailRecord} courses={courses} onClose={() => setDetailRecord(null)} />}
+    </div>
+  );
+}
+
+/* ─── 後台查看學員答題詳解的彈窗 ─── */
+function QuizDetailModal({ record, courses, onClose }) {
+  const course = courses.find(c => c.id === record.courseId);
+  // 題目來源優先用 snapshot（當下測驗的題目），否則用當前的課程題目
+  const questions = (record.questionsSnapshot && record.questionsSnapshot.length > 0) ? record.questionsSnapshot : (course?.quiz || []);
+  const userAnswers = record.answers || {};
+  const hasSnapshot = record.questionsSnapshot && record.questionsSnapshot.length > 0;
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#FFF", borderRadius:12, padding:0, width:"100%", maxWidth:720, maxHeight:"90vh", overflow:"hidden", boxShadow:"0 24px 48px rgba(0,0,0,0.3)", display:"flex", flexDirection:"column" }}>
+        {/* 標題列 */}
+        <div style={{ padding:"16px 20px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <h3 style={{ fontSize:16, fontWeight:700, color:C.text, margin:0 }}>🔍 答題詳解</h3>
+            <p style={{ fontSize:11, color:C.textLight, margin:"3px 0 0" }}>
+              {record.userName}（{record.empNo}）· {record.courseName} · {record.dateObj ? record.dateObj.toLocaleString("zh-TW") : "—"}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ border:"none", background:"none", fontSize:20, cursor:"pointer", color:C.textLight, padding:4 }}>✕</button>
+        </div>
+
+        {/* 成績摘要 */}
+        <div style={{ padding:"14px 20px", background:C.bgSoft, borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
+          <div style={{ display:"flex", gap:18, alignItems:"center", flexWrap:"wrap" }}>
+            <div>
+              <p style={{ margin:0, fontSize:10, color:C.textLight }}>得分</p>
+              <p style={{ margin:0, fontSize:20, fontWeight:700, color:C.text }}>{record.score}/{record.total}</p>
+            </div>
+            <div>
+              <p style={{ margin:0, fontSize:10, color:C.textLight }}>百分比</p>
+              <p style={{ margin:0, fontSize:20, fontWeight:700, color:record.pct>=60?C.success:C.danger }}>{record.pct}%</p>
+            </div>
+            <div>
+              <p style={{ margin:0, fontSize:10, color:C.textLight }}>結果</p>
+              <p style={{ margin:0, fontSize:14, fontWeight:600, color:record.pct>=60?C.success:C.danger }}>{record.pct>=60?"✓ 通過":"✗ 未通過"}</p>
+            </div>
+          </div>
+          {!hasSnapshot && (
+            <p style={{ margin:0, fontSize:10, color:C.warning, fontStyle:"italic" }}>⚠️ 此紀錄為早期版本，無作答快照，顯示當前題目</p>
+          )}
+        </div>
+
+        {/* 答題詳解內容（可滾動）*/}
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 20px" }}>
+          {questions.length === 0 ? (
+            <p style={{ textAlign:"center", color:C.textLight, padding:30 }}>無題目資料</p>
+          ) : questions.map((q, qi) => {
+            const userPick = userAnswers[qi];
+            const userPickDefined = userPick !== undefined && userPick !== null;
+            const isCorrect = userPick === q.answer;
+            return (
+              <div key={qi} style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${isCorrect?C.success:C.danger}40`, marginBottom:12 }}>
+                <div style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:8 }}>
+                  <span style={{ fontSize:11, padding:"3px 8px", borderRadius:5, background:isCorrect?`${C.success}15`:`${C.danger}15`, color:isCorrect?C.success:C.danger, fontWeight:600, flexShrink:0 }}>
+                    {isCorrect ? "✓ 答對" : "✗ 答錯"}
+                  </span>
+                  <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text, flex:1 }}>{qi+1}. {q.q}</p>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                  {q.options.map((opt, oi) => {
+                    const isUserPick = userPick === oi;
+                    const isCorrectAnswer = q.answer === oi;
+                    let style = { background:"transparent", border:`1px solid ${C.border}`, color:C.text };
+                    let suffix = null;
+                    const prefix = ["A", "B", "C", "D"][oi];
+
+                    if (isCorrectAnswer) {
+                      style = { background:`${C.success}10`, border:`1.5px solid ${C.success}`, color:C.text };
+                      suffix = <span style={{ fontSize:10, color:C.success, fontWeight:600, marginLeft:"auto", flexShrink:0 }}>✓ 正確答案</span>;
+                    } else if (isUserPick) {
+                      style = { background:`${C.danger}10`, border:`1.5px solid ${C.danger}`, color:C.text };
+                      suffix = <span style={{ fontSize:10, color:C.danger, fontWeight:600, marginLeft:"auto", flexShrink:0 }}>✗ 學員選擇</span>;
+                    }
+
+                    return (
+                      <div key={oi} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:5, ...style }}>
+                        <span style={{ width:20, height:20, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:600, color: isCorrectAnswer?C.success: isUserPick?C.danger:C.textLight, border:`1.5px solid ${isCorrectAnswer?C.success: isUserPick?C.danger:C.border}`, flexShrink:0 }}>{prefix}</span>
+                        <span style={{ fontSize:12 }}>{opt}</span>
+                        {suffix}
+                      </div>
+                    );
+                  })}
+                  {!userPickDefined && (
+                    <p style={{ margin:"4px 0 0", fontSize:10, color:C.warning, fontStyle:"italic" }}>⚠️ 此題未作答</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 底部 */}
+        <div style={{ padding:"12px 20px", borderTop:`1px solid ${C.border}`, display:"flex", justifyContent:"flex-end", gap:8 }}>
+          <Btn onClick={onClose} variant="outline">關閉</Btn>
+        </div>
+      </div>
     </div>
   );
 }
