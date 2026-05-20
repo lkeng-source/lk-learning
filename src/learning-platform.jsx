@@ -6,7 +6,7 @@ import {
   watchCourses, addCourse, updateCourse, deleteCourse, incrementViews,
   watchCategories, addCategory, updateCategory, deleteCategory,
   watchUserHistory, recordWatchProgress, watchAllWatchHistory,
-  watchAllQuizResults, saveQuizResult,
+  watchAllQuizResults, saveQuizResult, deleteQuizResult, deleteQuizResultsBatch,
   initializeDefaultData
 } from "./firebase-data";
 
@@ -938,11 +938,64 @@ function Quiz({ course, goBack, saveQuiz }) {
     setShowReview(false);
   };
 
+  // 進入測驗頁時，掛上全域鍵盤攔截器（離開頁面時自動移除）
+  useEffect(() => {
+    const blockKey = (e) => {
+      // 在「未提交」狀態下才需要強保護
+      if (submitted) return;
+      // Ctrl/Cmd + C/A/P/S/U/X/V
+      if (e.ctrlKey || e.metaKey) {
+        const k = e.key.toLowerCase();
+        if (["c", "a", "p", "s", "u", "x"].includes(k)) {
+          e.preventDefault();
+        }
+        // Ctrl+Shift+I/J/C 開發者工具
+        if (e.shiftKey && ["i", "j", "c"].includes(k)) {
+          e.preventDefault();
+        }
+      }
+      // F12
+      if (e.key === "F12") e.preventDefault();
+      // PrintScreen 無法被網頁攔截（瀏覽器層級），但仍試
+      if (e.key === "PrintScreen") e.preventDefault();
+    };
+    const blockCopy = (e) => { if (!submitted) e.preventDefault(); };
+    const blockContext = (e) => { if (!submitted) e.preventDefault(); };
+
+    document.addEventListener("keydown", blockKey);
+    document.addEventListener("copy", blockCopy);
+    document.addEventListener("cut", blockCopy);
+    document.addEventListener("contextmenu", blockContext);
+
+    return () => {
+      document.removeEventListener("keydown", blockKey);
+      document.removeEventListener("copy", blockCopy);
+      document.removeEventListener("cut", blockCopy);
+      document.removeEventListener("contextmenu", blockContext);
+    };
+  }, [submitted]);
+
   return (
-    <div style={{ padding:"24px 20px", maxWidth:720, margin:"0 auto" }}>
+    <div
+      style={{
+        padding:"24px 20px",
+        maxWidth:720,
+        margin:"0 auto",
+        userSelect: submitted ? "auto" : "none",
+        WebkitUserSelect: submitted ? "auto" : "none",
+        MozUserSelect: submitted ? "auto" : "none",
+        msUserSelect: submitted ? "auto" : "none",
+      }}
+      onDragStart={(e) => { if (!submitted) e.preventDefault(); }}
+    >
       <button onClick={goBack} style={{ border:"none", background:"none", color:C.navy, fontSize:12, cursor:"pointer", padding:0, fontWeight:500, marginBottom:12 }}>← 返回課程</button>
       <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>📝 {course.title} — 課後測驗</h2>
       <p style={{ color:C.textLight, fontSize:12, marginBottom:18 }}>共 {course.quiz.length} 題，及格 60%</p>
+      {!submitted && (
+        <div style={{ padding:"8px 12px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:14, lineHeight:1.6 }}>
+          🔒 <strong>測驗中：</strong>此頁面已開啟保護模式，禁止複製、列印、右鍵
+        </div>
+      )}
 
       {submitted ? (
         <>
@@ -1930,6 +1983,45 @@ function QuizRecords({ quizResults, users, courses }) {
     XLSX.writeFile(wb, filename);
   };
 
+  // 刪除單筆
+  const deleteOne = async (record) => {
+    const confirmText = `確定要刪除這筆測驗紀錄嗎？\n\n` +
+      `員工：${record.userName}（${record.empNo}）\n` +
+      `課程：${record.courseName}\n` +
+      `分數：${record.score}/${record.total}（${record.pct}%）\n` +
+      `日期：${record.dateObj ? record.dateObj.toLocaleString("zh-TW") : "—"}\n\n` +
+      `⚠️ 此操作無法復原`;
+    if (!confirm(confirmText)) return;
+    try {
+      await deleteQuizResult(record.key);
+      // 也從勾選中移除
+      setSelected(p => { const next = {...p}; delete next[record.key]; return next; });
+    } catch (e) {
+      alert("刪除失敗：" + e.message);
+    }
+  };
+
+  // 批次刪除
+  const deleteSelected = async () => {
+    const toDelete = filtered.filter(r => selected[r.key]);
+    if (toDelete.length === 0) {
+      alert("請先勾選要刪除的紀錄");
+      return;
+    }
+    const confirmText = `確定要刪除以下 ${toDelete.length} 筆測驗紀錄嗎？\n\n` +
+      toDelete.slice(0, 5).map(r => `· ${r.userName} - ${r.courseName}（${r.pct}%）`).join("\n") +
+      (toDelete.length > 5 ? `\n... 還有 ${toDelete.length - 5} 筆` : "") +
+      `\n\n⚠️ 此操作無法復原`;
+    if (!confirm(confirmText)) return;
+    try {
+      const ids = toDelete.map(r => r.key);
+      await deleteQuizResultsBatch(ids);
+      setSelected({});
+    } catch (e) {
+      alert("批次刪除失敗：" + e.message);
+    }
+  };
+
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
@@ -1937,6 +2029,11 @@ function QuizRecords({ quizResults, users, courses }) {
         <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
           {(filterUser || filterCourse || filterResult !== "all" || filterDateFrom || filterDateTo) && (
             <Btn onClick={resetFilter} variant="outline" style={{ fontSize:11 }}>✕ 清除篩選</Btn>
+          )}
+          {selectedCount > 0 && (
+            <Btn onClick={deleteSelected} variant="danger" style={{ fontSize:12 }}>
+              🗑️ 刪除已勾選（{selectedCount} 筆）
+            </Btn>
           )}
           <Btn onClick={exportExcel} variant="gold" style={{ fontSize:12 }}>
             📥 匯出 Excel {selectedCount > 0 ? `（${selectedCount} 筆）` : `（全部 ${filtered.length} 筆）`}
@@ -2017,9 +2114,14 @@ function QuizRecords({ quizResults, users, courses }) {
                   </td>
                   <td style={{ padding:"8px 12px", fontSize:11, color:C.textLight }}>{r.dateObj ? r.dateObj.toLocaleDateString("zh-TW") : "—"}</td>
                   <td style={{ padding:"8px 12px" }}>
-                    <Btn onClick={() => setDetailRecord(r)} variant="outline" style={{ padding:"3px 8px", fontSize:10 }}>
-                      🔍 看答題
-                    </Btn>
+                    <div style={{ display:"flex", gap:4 }}>
+                      <Btn onClick={() => setDetailRecord(r)} variant="outline" style={{ padding:"3px 8px", fontSize:10 }}>
+                        🔍 看答題
+                      </Btn>
+                      <Btn onClick={() => deleteOne(r)} variant="danger" style={{ padding:"3px 8px", fontSize:10 }}>
+                        🗑️ 刪除
+                      </Btn>
+                    </div>
                   </td>
                 </tr>
               ))}
