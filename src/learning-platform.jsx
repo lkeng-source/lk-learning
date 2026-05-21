@@ -480,6 +480,7 @@ function Front({ currentUser, onLogout, setView }) {
   const [filterCat, setFilterCat] = useState("all");
   const [showPwModal, setShowPwModal] = useState(currentUser.mustChangePw || false);
   const [quizDetailRecord, setQuizDetailRecord] = useState(null);  // 查看自己過往的測驗詳解
+  const [showUserMenu, setShowUserMenu] = useState(false);  // 頭像下拉選單
 
   // 即時資料訂閱
   const [categories, setCategories] = useState([]);
@@ -514,7 +515,14 @@ function Front({ currentUser, onLogout, setView }) {
   const filtered = useMemo(() => {
     let l = courses;
     if (filterCat !== "all") l = l.filter(c => c.category===filterCat);
-    if (search) l = l.filter(c => c.title.includes(search) || c.description.includes(search) || c.instructor.includes(search));
+    if (search) {
+      const kw = search.trim().toLowerCase();
+      l = l.filter(c =>
+        (c.title || "").toLowerCase().includes(kw) ||
+        (c.description || "").toLowerCase().includes(kw) ||
+        (c.instructor || "").toLowerCase().includes(kw)
+      );
+    }
     return l;
   }, [courses, filterCat, search]);
   const newest = useMemo(() => [...courses].sort((a,b) => (b.publishDate||"").localeCompare(a.publishDate||"")).slice(0,4), [courses]);
@@ -546,18 +554,36 @@ function Front({ currentUser, onLogout, setView }) {
 
   const Card = ({ course }) => {
     const cat = sortedCategories.find(c => c.id===course.category);
+    const coverColor = course.coverColor || cat?.color || C.navy;
     return (
-      <div onClick={() => { setSelectedCourse(course); setPage("course"); }} style={{ background:"#FFF", borderRadius:10, overflow:"hidden", cursor:"pointer", border:`1px solid ${C.border}`, transition:"all 0.2s" }}
-        onMouseOver={e => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,0.08)"; }}
+      <div onClick={() => { setSelectedCourse(course); setPage("course"); }} style={{ background:"#FFF", borderRadius:12, overflow:"hidden", cursor:"pointer", border:`1px solid ${C.border}`, transition:"all 0.2s", display:"flex", flexDirection:"column" }}
+        onMouseOver={e => { e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow="0 12px 24px rgba(0,0,0,0.12)"; }}
         onMouseOut={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="none"; }}>
-        <div style={{ height:90, background:`linear-gradient(135deg, ${cat?.color||C.navy}15, ${cat?.color||C.navy}30)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:32 }}>{course.thumbnail}</div>
-        <div style={{ padding:12 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
-            <span style={{ fontSize:10, padding:"2px 6px", borderRadius:4, background:`${cat?.color||C.navy}12`, color:cat?.color||C.navy, fontWeight:500 }}>{cat?.name||"未分類"}</span>
-            <span style={{ fontSize:10, color:C.textLight }}>👁 {course.views||0}</span>
+        {/* 封面 16:9 */}
+        <div style={{ aspectRatio:"16/9", background: course.coverUrl ? "#000" : `linear-gradient(135deg, ${coverColor}, ${coverColor}CC)`, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", overflow:"hidden" }}>
+          {course.coverUrl ? (
+            <img src={course.coverUrl} alt={course.title} style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; e.target.parentElement.style.background=`linear-gradient(135deg, ${coverColor}, ${coverColor}CC)`; }} />
+          ) : (
+            <div style={{ textAlign:"center", color:"#FFF", padding:14 }}>
+              <div style={{ fontSize:34, marginBottom:6, opacity:0.9 }}>📘</div>
+              <div style={{ fontSize:14, fontWeight:700, lineHeight:1.3, textShadow:"0 1px 3px rgba(0,0,0,0.2)" }}>{course.title}</div>
+            </div>
+          )}
+          {/* 分類標籤浮在封面左上 */}
+          <span style={{ position:"absolute", top:8, left:8, fontSize:10, padding:"3px 8px", borderRadius:12, background:"rgba(255,255,255,0.92)", color:coverColor, fontWeight:600, backdropFilter:"blur(4px)" }}>{cat?.icon} {cat?.name||"未分類"}</span>
+        </div>
+        {/* 內容 */}
+        <div style={{ padding:14, flex:1, display:"flex", flexDirection:"column" }}>
+          <h3 style={{ margin:0, fontSize:14, fontWeight:700, color:C.text, lineHeight:1.4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", minHeight:38 }}>{course.title}</h3>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:8 }}>
+            <div style={{ width:22, height:22, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:10, fontWeight:600, flexShrink:0 }}>{course.instructor?.[0] || "?"}</div>
+            <span style={{ fontSize:12, color:C.textMid, fontWeight:500 }}>{course.instructor}</span>
           </div>
-          <h3 style={{ margin:0, fontSize:13, fontWeight:600, color:C.text, lineHeight:1.4 }}>{course.title}</h3>
-          <p style={{ margin:"4px 0 0", fontSize:11, color:C.textLight }}>{course.instructor} · {course.duration}分</p>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:8, fontSize:11, color:C.textLight }}>
+            <span>🕐 {course.duration} 分鐘</span>
+            <span>👁 {course.views||0}</span>
+            {course.quiz?.length > 0 && <span>📝 {course.quiz.length} 題</span>}
+          </div>
         </div>
       </div>
     );
@@ -568,21 +594,60 @@ function Front({ currentUser, onLogout, setView }) {
       {showPwModal && <ChangePasswordModal currentUser={currentUser} onClose={() => setShowPwModal(false)} force={currentUser.mustChangePw} />}
 
       <div style={{ background:"#FFF", borderBottom:`2px solid ${C.gold}40`, padding:"0 20px", display:"flex", alignItems:"center", height:56, gap:12, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(0,0,0,0.04)", flexWrap:"wrap" }}>
-        <div onClick={() => { setSelectedCourse(null); setPage("home"); }} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
+        <div onClick={() => { setSelectedCourse(null); setPage("home"); }} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", flexShrink:0 }}>
           <LKLogo size={22} color={C.gold} />
           <span style={{ fontSize:15, fontWeight:700, color:C.navy }}>亞翔學習</span>
         </div>
-        <div style={{ flex:1, maxWidth:300, minWidth:120 }}>
-          <input value={search} onChange={e => { setSearch(e.target.value); if (page !== "courses") setPage("courses"); }} placeholder="🔍 搜尋..." style={{ width:"100%", padding:"6px 12px", borderRadius:16, border:`1px solid ${C.border}`, fontSize:12, outline:"none", boxSizing:"border-box", background:C.bg }} />
+        <div style={{ flex:1, maxWidth:380, minWidth:120 }}>
+          <input value={search} onChange={e => { setSearch(e.target.value); if (page !== "courses") setPage("courses"); }} placeholder="🔍 搜尋課程、講師..." style={{ width:"100%", padding:"8px 16px", borderRadius:20, border:`1px solid ${C.border}`, fontSize:13, outline:"none", boxSizing:"border-box", background:C.bg }} />
         </div>
         <div style={{ display:"flex", gap:2 }}>
           {[{l:"首頁",p:"home"},{l:"課程",p:"courses"},{l:"我的",p:"profile"}].map(n => (
-            <button key={n.p} onClick={() => setPage(n.p)} style={{ padding:"6px 10px", borderRadius:6, border:"none", background:page===n.p?`${C.navy}10`:"transparent", color:page===n.p?C.navy:C.textLight, fontWeight:page===n.p?600:400, fontSize:12, cursor:"pointer" }}>{n.l}</button>
+            <button key={n.p} onClick={() => setPage(n.p)} style={{ padding:"6px 12px", borderRadius:8, border:"none", background:page===n.p?`${C.navy}10`:"transparent", color:page===n.p?C.navy:C.textLight, fontWeight:page===n.p?600:400, fontSize:13, cursor:"pointer" }}>{n.l}</button>
           ))}
         </div>
-        {currentUser.role==="admin" && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
-        <div style={{ width:28, height:28, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:12, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
-        <Btn onClick={onLogout} variant="ghost" style={{ fontSize:11, color:C.textLight, padding:"4px 8px" }}>登出</Btn>
+        {/* 右側：後台 + 信箱 + 頭像 + 登出，靠最右 */}
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginLeft:"auto", flexShrink:0 }}>
+          {currentUser.role==="admin" && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
+          {/* 信箱 icon（站內信，第三批會接上通知）*/}
+          <button
+            onClick={() => setPage("inbox")}
+            title="我的信箱"
+            style={{ position:"relative", width:36, height:36, borderRadius:"50%", border:"none", background: page==="inbox" ? `${C.navy}12` : "transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, transition:"all 0.2s" }}
+            onMouseOver={e => { e.currentTarget.style.background = `${C.navy}10`; }}
+            onMouseOut={e => { e.currentTarget.style.background = page==="inbox" ? `${C.navy}12` : "transparent"; }}
+          >
+            ✉️
+            {/* 未讀紅點（第三批接上資料後顯示）*/}
+            {/* <span style={{ position:"absolute", top:4, right:4, width:8, height:8, borderRadius:"50%", background:C.danger, border:"1.5px solid #FFF" }} /> */}
+          </button>
+          {/* 頭像 + 下拉 */}
+          <div style={{ position:"relative" }}>
+            <button
+              onClick={() => setShowUserMenu(v => !v)}
+              style={{ display:"flex", alignItems:"center", gap:6, border:"none", background:"transparent", cursor:"pointer", padding:"3px 6px", borderRadius:8 }}
+              onMouseOver={e => { e.currentTarget.style.background = `${C.navy}08`; }}
+              onMouseOut={e => { e.currentTarget.style.background = "transparent"; }}
+            >
+              <div style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:13, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
+              <span style={{ fontSize:12, color:C.textMid, fontWeight:500 }}>▾</span>
+            </button>
+            {showUserMenu && (
+              <>
+                <div onClick={() => setShowUserMenu(false)} style={{ position:"fixed", inset:0, zIndex:200 }} />
+                <div style={{ position:"absolute", top:"calc(100% + 6px)", right:0, background:"#FFF", borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,0.15)", border:`1px solid ${C.border}`, minWidth:180, zIndex:201, overflow:"hidden" }}>
+                  <div style={{ padding:"12px 14px", borderBottom:`1px solid ${C.border}`, background:C.bgSoft }}>
+                    <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>{currentUser.name}</p>
+                    <p style={{ margin:"2px 0 0", fontSize:11, color:C.textLight }}>{currentUser.empNo} · {currentUser.department}</p>
+                  </div>
+                  <button onClick={() => { setPage("profile"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 我的學習</button>
+                  <button onClick={() => { setPage("inbox"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✉️ 我的信箱</button>
+                  <button onClick={() => { onLogout(); }} style={{ width:"100%", padding:"10px 14px", border:"none", borderTop:`1px solid ${C.border}`, background:"transparent", textAlign:"left", fontSize:13, color:C.danger, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=`${C.danger}08`} onMouseOut={e=>e.currentTarget.style.background="transparent"}>🚪 登出</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {page==="home" && (
@@ -621,26 +686,38 @@ function Front({ currentUser, onLogout, setView }) {
                 <h2 style={{ fontSize:16, fontWeight:700, color:C.text, margin:0 }}>🆕 最新上架</h2>
                 <button onClick={() => setPage("courses")} style={{ border:"none", background:"none", color:C.navy, fontSize:12, cursor:"pointer", fontWeight:500 }}>查看全部 →</button>
               </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(170px,1fr))", gap:12 }}>{newest.map(c => <Card key={c.id} course={c} />)}</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px,1fr))", gap:18 }}>{newest.map(c => <Card key={c.id} course={c} />)}</div>
             </div>
             <div>
               <h2 style={{ fontSize:16, fontWeight:700, color:C.text, marginBottom:12 }}>🔥 最熱門課程</h2>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(170px,1fr))", gap:12 }}>{popular.map(c => <Card key={c.id} course={c} />)}</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px,1fr))", gap:18 }}>{popular.map(c => <Card key={c.id} course={c} />)}</div>
             </div>
           </div>
         </div>
       )}
 
       {page==="courses" && (
-        <div style={{ padding:"24px 20px" }}>
-          <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:14 }}>所有課程</h2>
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:18 }}>
-            <button onClick={() => setFilterCat("all")} style={{ padding:"4px 12px", borderRadius:14, border:`1px solid ${filterCat==="all"?C.navy:C.border}`, background:filterCat==="all"?`${C.navy}10`:"#FFF", color:filterCat==="all"?C.navy:C.textMid, fontSize:11, cursor:"pointer", fontWeight:500 }}>全部</button>
+        <div style={{ padding:"24px 20px", maxWidth:1200, margin:"0 auto" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8, marginBottom:14 }}>
+            <h2 style={{ fontSize:20, fontWeight:700, color:C.text, margin:0 }}>探索課程</h2>
+            {search && <span style={{ fontSize:12, color:C.textLight }}>搜尋「<strong style={{ color:C.navy }}>{search}</strong>」· {filtered.length} 筆結果</span>}
+          </div>
+          {/* 分類膠囊 */}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
+            <button onClick={() => setFilterCat("all")} style={{ padding:"6px 16px", borderRadius:18, border:`1.5px solid ${filterCat==="all"?C.navy:C.border}`, background:filterCat==="all"?C.navy:"#FFF", color:filterCat==="all"?"#FFF":C.textMid, fontSize:12, cursor:"pointer", fontWeight:600, transition:"all 0.2s" }}>全部課程</button>
             {sortedCategories.map(cat => (
-              <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding:"4px 12px", borderRadius:14, border:`1px solid ${filterCat===cat.id?cat.color:C.border}`, background:filterCat===cat.id?`${cat.color}10`:"#FFF", color:filterCat===cat.id?cat.color:C.textMid, fontSize:11, cursor:"pointer", fontWeight:500 }}>{cat.icon} {cat.name}</button>
+              <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding:"6px 16px", borderRadius:18, border:`1.5px solid ${filterCat===cat.id?cat.color:C.border}`, background:filterCat===cat.id?cat.color:"#FFF", color:filterCat===cat.id?"#FFF":C.textMid, fontSize:12, cursor:"pointer", fontWeight:600, transition:"all 0.2s" }}>{cat.icon} {cat.name}</button>
             ))}
           </div>
-          {filtered.length===0 ? <div style={{ textAlign:"center", padding:36, color:C.textLight }}><p style={{ fontSize:30 }}>🔍</p><p>沒有找到符合條件的課程</p></div> : <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(170px,1fr))", gap:12 }}>{filtered.map(c => <Card key={c.id} course={c} />)}</div>}
+          {filtered.length===0 ? (
+            <div style={{ textAlign:"center", padding:60, color:C.textLight }}>
+              <p style={{ fontSize:42, margin:0 }}>🔍</p>
+              <p style={{ fontSize:14, margin:"12px 0 0" }}>沒有找到符合條件的課程</p>
+              {search && <p style={{ fontSize:12, margin:"4px 0 0" }}>試試其他關鍵字，或<button onClick={() => setSearch("")} style={{ border:"none", background:"none", color:C.navy, cursor:"pointer", fontSize:12, textDecoration:"underline" }}>清除搜尋</button></p>}
+            </div>
+          ) : (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px,1fr))", gap:18 }}>{filtered.map(c => <Card key={c.id} course={c} />)}</div>
+          )}
         </div>
       )}
 
@@ -744,6 +821,20 @@ function Front({ currentUser, onLogout, setView }) {
       {quizDetailRecord && <QuizDetailModal record={quizDetailRecord} courses={courses} onClose={() => setQuizDetailRecord(null)} />}
 
       {page==="course" && selectedCourse && <CoursePage {...{categories:sortedCategories,course:selectedCourse,goBack:()=>{setSelectedCourse(null);setPage("home");},watchHistory,currentUser,recordWatch:handleRecordWatch,saveQuiz:handleSaveQuiz}} />}
+
+      {page==="inbox" && (
+        <div style={{ padding:"24px 20px", maxWidth:800, margin:"0 auto" }}>
+          <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>✉️ 我的信箱</h2>
+          <p style={{ color:C.textLight, fontSize:12, marginBottom:18 }}>講師回覆、系統通知都會出現在這裡</p>
+          <div style={{ background:"#FFF", borderRadius:12, padding:48, border:`1px solid ${C.border}`, textAlign:"center" }}>
+            <div style={{ fontSize:48, marginBottom:12 }}>📭</div>
+            <p style={{ fontSize:14, color:C.textMid, fontWeight:600, margin:0 }}>目前沒有新訊息</p>
+            <p style={{ fontSize:12, color:C.textLight, margin:"8px 0 0", lineHeight:1.6 }}>
+              當您向講師提問、講師回覆後，<br />通知會出現在這裡。
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1209,6 +1300,8 @@ function CourseAdmin({ categories, courses }) {
   const [category, setCategory] = useState(categories[0]?.id || "");
   const [instructor, setInstructor] = useState("");
   const [description, setDescription] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");       // 封面圖網址
+  const [coverColor, setCoverColor] = useState("#2C5F7C");  // 沒圖時的封面底色
   const [chapters, setChapters] = useState([{ title:"第一章", duration:15, youtubeUrl:"" }]);
   const [quiz, setQuiz] = useState([]);  // 測驗題目
   const [files, setFiles] = useState([]);  // 課程附件（連結方式）
@@ -1216,6 +1309,7 @@ function CourseAdmin({ categories, courses }) {
 
   const reset = () => {
     setTitle(""); setCategory(categories[0]?.id || ""); setInstructor(""); setDescription("");
+    setCoverUrl(""); setCoverColor("#2C5F7C");
     setChapters([{ title:"第一章", duration:15, youtubeUrl:"" }]);
     setQuiz([]);
     setFiles([]);
@@ -1223,6 +1317,7 @@ function CourseAdmin({ categories, courses }) {
   };
   const startEdit = (c) => {
     setTitle(c.title); setCategory(c.category); setInstructor(c.instructor); setDescription(c.description);
+    setCoverUrl(c.coverUrl || ""); setCoverColor(c.coverColor || "#2C5F7C");
     setChapters((c.chapters||[{title:"第一章",duration:15,youtubeUrl:""}]).map(ch => ({ ...ch, youtubeUrl: ch.youtubeUrl || "" })));
     setQuiz(c.quiz || []);
     setFiles(c.files || []);
@@ -1242,10 +1337,10 @@ function CourseAdmin({ categories, courses }) {
     const totalDuration = chapters.reduce((s,c) => s + (+c.duration||0), 0);
     try {
       if (editing) {
-        await updateCourse(editing, { title, category, instructor, description, chapters, quiz, files, duration: totalDuration });
+        await updateCourse(editing, { title, category, instructor, description, coverUrl, coverColor, chapters, quiz, files, duration: totalDuration });
       } else {
         await addCourse({
-          title, category, instructor, description,
+          title, category, instructor, description, coverUrl, coverColor,
           duration: totalDuration, thumbnail:"📘", views:0,
           publishDate: new Date().toISOString().split("T")[0],
           status: publishNow ? "published" : "draft",
@@ -1294,6 +1389,46 @@ function CourseAdmin({ categories, courses }) {
             </Field>
           </div>
           <Field label="課程說明"><textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} style={{ ...inp, resize:"vertical" }} placeholder="課程內容說明..." /></Field>
+
+          {/* ══════ 課程封面設定 ══════ */}
+          <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
+            <p style={{ margin:"0 0 10px", fontSize:13, fontWeight:600, color:C.text }}>🖼️ 課程封面</p>
+            <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>
+              {/* 即時預覽 */}
+              <div style={{ width:200, flexShrink:0 }}>
+                <p style={{ fontSize:11, color:C.textLight, margin:"0 0 5px" }}>預覽</p>
+                <div style={{ width:200, height:112, borderRadius:8, overflow:"hidden", border:`1px solid ${C.border}`, background: coverUrl ? "#000" : `linear-gradient(135deg, ${coverColor}, ${coverColor}DD)`, display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+                  {coverUrl ? (
+                    <img src={coverUrl} alt="封面預覽" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; }} />
+                  ) : (
+                    <div style={{ textAlign:"center", color:"#FFF", padding:10 }}>
+                      <div style={{ fontSize:28, marginBottom:4 }}>📘</div>
+                      <div style={{ fontSize:12, fontWeight:600, opacity:0.95, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{title || "課程標題"}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* 設定欄位 */}
+              <div style={{ flex:1, minWidth:240 }}>
+                <Field label="封面圖網址（選填，留空則用底色 + 標題）">
+                  <input value={coverUrl} onChange={e => setCoverUrl(e.target.value)} placeholder="https://圖片網址.jpg" style={inp} />
+                </Field>
+                <p style={{ fontSize:10, color:C.textLight, margin:"-4px 0 10px", lineHeight:1.6 }}>
+                  💡 可貼任何公開圖片網址（建議 16:9 比例，如 1280×720）。圖片需設為公開可存取。
+                </p>
+                <Field label="底色（沒有封面圖時顯示）">
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <input type="color" value={coverColor} onChange={e => setCoverColor(e.target.value)} style={{ width:40, height:32, border:"none", padding:0, borderRadius:5, cursor:"pointer", background:"transparent" }} />
+                    <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                      {["#2C5F7C","#D4A528","#22A06B","#7C3AED","#E25555","#0891B2","#B45309","#475569"].map(co => (
+                        <button key={co} onClick={() => setCoverColor(co)} style={{ width:24, height:24, borderRadius:"50%", border:`2px solid ${coverColor===co?"#333":"transparent"}`, background:co, cursor:"pointer", padding:0 }} />
+                      ))}
+                    </div>
+                  </div>
+                </Field>
+              </div>
+            </div>
+          </div>
 
           <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
