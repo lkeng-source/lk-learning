@@ -7,6 +7,7 @@ import {
   watchCategories, addCategory, updateCategory, deleteCategory,
   watchUserHistory, recordWatchProgress, watchAllWatchHistory,
   watchAllQuizResults, saveQuizResult, deleteQuizResult, deleteQuizResultsBatch,
+  watchCourseReviews, watchAllReviews, saveReview, toggleReviewHelpful, deleteReview,
   initializeDefaultData
 } from "./firebase-data";
 
@@ -136,6 +137,47 @@ const getYouTubeId = (url) => {
   const parsed = parseVideoUrl(url);
   return parsed?.type === "youtube" ? parsed.videoId : null;
 };
+
+// 姓氏馬賽克：保留姓氏，名字用 〇 取代
+// 王小明 → 王〇〇 ；陳大 → 陳〇 ；歐陽小明 → 歐〇〇〇（保留首字）
+// 英文名 John Smith → J〇〇〇
+const maskName = (name) => {
+  if (!name || typeof name !== "string") return "匿名";
+  const trimmed = name.trim();
+  if (trimmed.length <= 1) return trimmed + "〇";
+  const first = trimmed[0];
+  const rest = "〇".repeat(Math.max(1, trimmed.length - 1));
+  return first + rest;
+};
+
+// 星星顯示元件（唯讀或可點選）
+function StarRating({ value = 0, size = 18, onChange, readonly = true }) {
+  const [hover, setHover] = useState(0);
+  const display = hover || value;
+  return (
+    <span style={{ display: "inline-flex", gap: 2 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span
+          key={n}
+          onClick={readonly ? undefined : () => onChange?.(n)}
+          onMouseEnter={readonly ? undefined : () => setHover(n)}
+          onMouseLeave={readonly ? undefined : () => setHover(0)}
+          style={{
+            fontSize: size,
+            cursor: readonly ? "default" : "pointer",
+            color: n <= display ? "#F5A623" : "#D8DEE6",
+            lineHeight: 1,
+            transition: "color 0.15s",
+            userSelect: "none",
+          }}
+        >
+          ★
+        </span>
+      ))}
+    </span>
+  );
+}
+
 
 /* ─── L&K Logo 元件（仿亞翔工程原版 logo）─── */
 function LKLogo({ size = 36, color = "#D4A528" }) {
@@ -842,6 +884,11 @@ function Front({ currentUser, onLogout, setView }) {
 function CoursePage({ categories, course, goBack, watchHistory, currentUser, recordWatch, saveQuiz }) {
   const [activeCh, setActiveCh] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
+  const [isIdle, setIsIdle] = useState(false);  // 閒置狀態（自動暫停）
+  const [reviews, setReviews] = useState([]);    // 本課程的所有評價
+  const [myRating, setMyRating] = useState(0);    // 我要給的星數
+  const [myReviewText, setMyReviewText] = useState("");  // 我的評價內容
+  const [savingReview, setSavingReview] = useState(false);
   const historyRecord = watchHistory[`${currentUser.id}_${course.id}`];
   const progress = historyRecord?.progress || 0;
   const totalTime = historyRecord?.totalTime || 0;
@@ -849,6 +896,73 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
   const currentChapter = course.chapters?.[activeCh];
   const videoInfo = parseVideoUrl(currentChapter?.youtubeUrl);  // 欄位名仍叫 youtubeUrl 是為了向後相容
   const hasEmbed = videoInfo && (videoInfo.type === "youtube" || videoInfo.type === "onedrive" || videoInfo.type === "sharepoint" || videoInfo.type === "vimeo");
+
+  // ─── 訂閱本課程的評價 ───
+  useEffect(() => {
+    const unsub = watchCourseReviews(course.id, (list) => {
+      setReviews(list);
+      // 找出自己的評價，帶入編輯欄位
+      const mine = list.find(r => r.userId === currentUser.id);
+      if (mine) {
+        setMyRating(mine.rating || 0);
+        setMyReviewText(mine.content || "");
+      }
+    });
+    return () => unsub && unsub();
+  }, [course.id, currentUser.id]);
+
+  // 評價統計
+  const avgRating = reviews.length > 0 ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length) : 0;
+  const myReview = reviews.find(r => r.userId === currentUser.id);
+
+  // 送出評價
+  const submitReview = async () => {
+    if (myRating < 1) { alert("請至少給 1 顆星"); return; }
+    setSavingReview(true);
+    try {
+      await saveReview(currentUser.id, course.id, myRating, myReviewText.trim(), currentUser.name, myReview?.helpfulUserIds || []);
+    } catch (e) {
+      alert("送出評價失敗：" + e.message);
+    }
+    setSavingReview(false);
+  };
+
+  // 按「有幫助」
+  const clickHelpful = async (review) => {
+    try {
+      await toggleReviewHelpful(review.id, currentUser.id, review.helpfulUserIds || []);
+    } catch (e) {
+      console.error("toggle helpful failed:", e);
+    }
+  };
+
+  // ─── 閒置偵測：一段時間沒操作 → 自動暫停影片並跳提示 ───
+  const IDLE_LIMIT_MS = 3 * 60 * 1000;  // 3 分鐘無操作即暫停（可調整）
+  const idleTimerRef = useRef(null);
+
+  useEffect(() => {
+    // 只有在有影片、且正在觀看（非閒置、非測驗）時才啟動偵測
+    if (!hasEmbed || showQuiz) return;
+
+    const resetTimer = () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => setIsIdle(true), IDLE_LIMIT_MS);
+    };
+
+    // 監聽各種使用者活動
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+    const onActivity = () => { if (!isIdle) resetTimer(); };
+    events.forEach(ev => window.addEventListener(ev, onActivity));
+    resetTimer();  // 啟動計時
+
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, onActivity));
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [hasEmbed, showQuiz, isIdle, activeCh]);
+
+  // 使用者點「繼續觀看」→ 解除閒置
+  const resumeWatching = () => setIsIdle(false);
 
   // 進度規則：依照「實際觀看時間 / 課程總時長」計算
   // 觀看時間達 80% 即視為完成（100%）
@@ -888,7 +1002,22 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
       <div style={{ display:"flex", gap:18, flexWrap:"wrap" }}>
         <div style={{ flex:"1 1 380px", minWidth:0 }}>
           <div style={{ background:"#000", borderRadius:10, aspectRatio:"16/9", overflow:"hidden", position:"relative" }}>
-            {hasEmbed ? (
+            {hasEmbed && isIdle ? (
+              /* 閒置暫停遮罩 */
+              <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"#FFF", background:"linear-gradient(135deg, #1a1a1a, #2a2a2a)", padding:24, textAlign:"center" }}>
+                <span style={{ fontSize:48, marginBottom:12 }}>⏸️</span>
+                <p style={{ fontSize:16, fontWeight:600, margin:"0 0 6px" }}>影片已暫停</p>
+                <p style={{ fontSize:12, opacity:0.6, margin:"0 0 20px", lineHeight:1.6 }}>
+                  系統偵測到您已有一段時間沒有操作，<br />為確保學習效果，影片已自動暫停。
+                </p>
+                <button
+                  onClick={resumeWatching}
+                  style={{ padding:"12px 32px", background:C.gold, color:"#FFF", border:"none", borderRadius:10, fontSize:15, fontWeight:700, cursor:"pointer", boxShadow:`0 4px 16px ${C.gold}50` }}
+                >
+                  ▶ 繼續觀看
+                </button>
+              </div>
+            ) : hasEmbed ? (
               <iframe
                 key={videoInfo.embedUrl}
                 src={videoInfo.embedUrl}
@@ -990,9 +1119,127 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
             })}
           </div>
           {course.quiz?.length > 0 && (
-            <button onClick={() => setShowQuiz(true)} style={{ width:"100%", padding:11, borderRadius:9, border:"none", background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, color:C.navyDark, fontSize:13, fontWeight:600, cursor:"pointer", boxShadow:`0 2px 8px ${C.gold}30` }}>
+            <button onClick={() => setShowQuiz(true)} style={{ width:"100%", padding:11, borderRadius:9, border:"none", background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, color:C.navyDark, fontSize:13, fontWeight:600, cursor:"pointer", boxShadow:`0 2px 8px ${C.gold}30`, marginBottom:10 }}>
               📝 開始課後測驗（{course.quiz.length} 題）
             </button>
+          )}
+          {/* 課程評分摘要卡 */}
+          <div style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}` }}>
+            <p style={{ margin:"0 0 8px", fontSize:12, fontWeight:600 }}>課程評分</p>
+            {reviews.length > 0 ? (
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:26, fontWeight:700, color:C.text }}>{avgRating.toFixed(1)}</span>
+                <div>
+                  <StarRating value={Math.round(avgRating)} size={14} readonly />
+                  <p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>{reviews.length} 則評價</p>
+                </div>
+              </div>
+            ) : (
+              <p style={{ margin:0, fontSize:11, color:C.textLight }}>尚無評價，成為第一個評價的人！</p>
+            )}
+            <button onClick={() => { const el = document.getElementById("review-section"); el?.scrollIntoView({ behavior:"smooth" }); }} style={{ width:"100%", marginTop:10, padding:"7px", borderRadius:7, border:`1px solid ${C.gold}`, background:"#FFF", color:C.navy, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+              ⭐ {myReview ? "查看 / 修改我的評價" : "我要評價"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════ 課程評價區塊 ══════════ */}
+      <div id="review-section" style={{ marginTop:28, maxWidth:780 }}>
+        <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>⭐ 課程評價</h2>
+        <p style={{ fontSize:12, color:C.textLight, marginBottom:16 }}>分享你的學習心得，幫助其他同仁（顯示時僅保留姓氏，例如「王〇〇」）</p>
+
+        {/* 評分總覽 */}
+        <div style={{ display:"flex", gap:24, alignItems:"center", padding:"18px 20px", background:"#FFF", borderRadius:12, border:`1px solid ${C.border}`, marginBottom:18, flexWrap:"wrap" }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:40, fontWeight:700, color:C.text, lineHeight:1 }}>{reviews.length > 0 ? avgRating.toFixed(1) : "—"}</div>
+            <div style={{ marginTop:6 }}><StarRating value={Math.round(avgRating)} size={16} readonly /></div>
+            <p style={{ margin:"4px 0 0", fontSize:11, color:C.textLight }}>{reviews.length} 則評價</p>
+          </div>
+          {/* 星等分布 */}
+          <div style={{ flex:1, minWidth:200 }}>
+            {[5,4,3,2,1].map(star => {
+              const count = reviews.filter(r => r.rating === star).length;
+              const pct = reviews.length > 0 ? (count / reviews.length * 100) : 0;
+              return (
+                <div key={star} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+                  <span style={{ fontSize:11, color:C.textMid, width:30 }}>{star} ★</span>
+                  <div style={{ flex:1, height:7, background:C.bgSoft, borderRadius:4, overflow:"hidden" }}>
+                    <div style={{ width:`${pct}%`, height:"100%", background:"#F5A623", borderRadius:4 }} />
+                  </div>
+                  <span style={{ fontSize:10, color:C.textLight, width:24, textAlign:"right" }}>{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 我的評價輸入區 */}
+        <div style={{ padding:"16px 20px", background:C.goldPale, borderRadius:12, border:`1px solid ${C.gold}40`, marginBottom:18 }}>
+          <p style={{ margin:"0 0 10px", fontSize:14, fontWeight:600, color:C.navy }}>{myReview ? "✏️ 修改我的評價" : "✍️ 撰寫評價"}</p>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:13, color:C.textMid }}>我的評分：</span>
+            <StarRating value={myRating} size={26} readonly={false} onChange={setMyRating} />
+            {myRating > 0 && <span style={{ fontSize:12, color:C.textLight }}>{myRating} 顆星</span>}
+          </div>
+          <textarea
+            value={myReviewText}
+            onChange={e => setMyReviewText(e.target.value)}
+            rows={3}
+            placeholder="這門課對你有什麼幫助？對講師或內容的建議？（選填）"
+            style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13, resize:"vertical", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}
+          />
+          <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
+            <Btn onClick={submitReview} disabled={savingReview || myRating < 1} variant="gold">
+              {savingReview ? "送出中..." : myReview ? "更新評價" : "送出評價"}
+            </Btn>
+          </div>
+        </div>
+
+        {/* 評價列表 */}
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {reviews.length === 0 ? (
+            <div style={{ textAlign:"center", padding:36, color:C.textLight, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}` }}>
+              <p style={{ fontSize:32, margin:0 }}>💬</p>
+              <p style={{ fontSize:13, margin:"8px 0 0" }}>還沒有人評價，當第一個分享心得的人吧！</p>
+            </div>
+          ) : (
+            [...reviews]
+              .sort((a,b) => {
+                // 自己的評價排最前，其餘依有幫助數排序
+                if (a.userId === currentUser.id) return -1;
+                if (b.userId === currentUser.id) return 1;
+                return (b.helpfulUserIds?.length || 0) - (a.helpfulUserIds?.length || 0);
+              })
+              .map(r => {
+                const isMine = r.userId === currentUser.id;
+                const helpfulCount = r.helpfulUserIds?.length || 0;
+                const iFoundHelpful = r.helpfulUserIds?.includes(currentUser.id);
+                return (
+                  <div key={r.id} style={{ padding:"14px 16px", background:"#FFF", borderRadius:12, border:`1px solid ${isMine ? C.gold+"60" : C.border}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                      <div style={{ width:34, height:34, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:14, fontWeight:600, flexShrink:0 }}>{(r.userName||"匿")[0]}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontSize:13, fontWeight:600, color:C.text }}>{maskName(r.userName)}</span>
+                          {isMine && <span style={{ fontSize:10, padding:"1px 7px", borderRadius:8, background:`${C.gold}20`, color:C.navy, fontWeight:600 }}>我的評價</span>}
+                        </div>
+                        <StarRating value={r.rating} size={13} readonly />
+                      </div>
+                      {r.date?.toDate && <span style={{ fontSize:10, color:C.textLight }}>{r.date.toDate().toLocaleDateString("zh-TW")}</span>}
+                    </div>
+                    {r.content && <p style={{ margin:"0 0 10px", fontSize:13, color:C.text, lineHeight:1.6 }}>{r.content}</p>}
+                    {/* 有幫助按鈕 */}
+                    <button
+                      onClick={() => clickHelpful(r)}
+                      style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:16, border:`1px solid ${iFoundHelpful ? C.success : C.border}`, background: iFoundHelpful ? `${C.success}10` : "#FFF", color: iFoundHelpful ? C.success : C.textMid, fontSize:12, cursor:"pointer", fontWeight:500, transition:"all 0.2s" }}
+                    >
+                      {iFoundHelpful ? "👍 已說讚" : "👍 有幫助"}
+                      {helpfulCount > 0 && <span style={{ fontSize:11, opacity:0.8 }}>· {helpfulCount} 人覺得有幫助</span>}
+                    </button>
+                  </div>
+                );
+              })
           )}
         </div>
       </div>
