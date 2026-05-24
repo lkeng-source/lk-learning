@@ -256,6 +256,54 @@ export const deleteQuizResultsBatch = async (docIds) => {
 };
 
 // ───────────────────────────────────────────
+// 課程評價（reviews collection）
+// 文件 ID = {userId}_{courseId}（每人每課一則評價）
+// ───────────────────────────────────────────
+export const watchCourseReviews = (courseId, callback) => {
+  const q = query(collection(db, "reviews"), where("courseId", "==", courseId));
+  return onSnapshot(q, (snap) => {
+    const reviews = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(reviews);
+  });
+};
+
+// 訂閱所有評價（管理員用，或計算課程平均分）
+export const watchAllReviews = (callback) => {
+  return onSnapshot(collection(db, "reviews"), (snap) => {
+    const reviews = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(reviews);
+  });
+};
+
+// 新增 / 更新評價（每人每課只能一則，重複會覆蓋）
+export const saveReview = async (userId, courseId, rating, content, userName, helpfulUserIds) => {
+  const docId = `${userId}_${courseId}`;
+  await setDoc(doc(db, "reviews", docId), {
+    userId,
+    courseId,
+    rating,             // 1-5 星
+    content: content || "",
+    userName,           // 完整姓名（前端顯示時做姓氏馬賽克）
+    helpfulUserIds: helpfulUserIds || [],  // 覺得有幫助的人的 userId 陣列
+    date: serverTimestamp(),
+  });
+};
+
+// 切換「覺得有幫助」（按一下加入，再按一下移除）
+export const toggleReviewHelpful = async (reviewId, userId, currentHelpfulIds) => {
+  const ids = currentHelpfulIds || [];
+  const newIds = ids.includes(userId)
+    ? ids.filter(id => id !== userId)
+    : [...ids, userId];
+  await updateDoc(doc(db, "reviews", reviewId), { helpfulUserIds: newIds });
+};
+
+// 刪除評價（自己或管理員）
+export const deleteReview = async (reviewId) => {
+  await deleteDoc(doc(db, "reviews", reviewId));
+};
+
+// ───────────────────────────────────────────
 // 初始化預設資料（第一次使用時呼叫）
 // ───────────────────────────────────────────
 export const initializeDefaultData = async () => {
