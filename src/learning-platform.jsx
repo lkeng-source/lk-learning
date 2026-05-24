@@ -573,13 +573,12 @@ function Front({ currentUser, onLogout, setView }) {
           <span style={{ position:"absolute", top:8, left:8, fontSize:10, padding:"3px 8px", borderRadius:12, background:"rgba(255,255,255,0.92)", color:coverColor, fontWeight:600, backdropFilter:"blur(4px)" }}>{cat?.icon} {cat?.name||"未分類"}</span>
         </div>
         {/* 內容 */}
-        <div style={{ padding:14, flex:1, display:"flex", flexDirection:"column" }}>
-          <h3 style={{ margin:0, fontSize:14, fontWeight:700, color:C.text, lineHeight:1.4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", minHeight:38 }}>{course.title}</h3>
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:8 }}>
-            <div style={{ width:22, height:22, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:10, fontWeight:600, flexShrink:0 }}>{course.instructor?.[0] || "?"}</div>
-            <span style={{ fontSize:12, color:C.textMid, fontWeight:500 }}>{course.instructor}</span>
+        <div style={{ padding:16, flex:1, display:"flex", flexDirection:"column" }}>
+          <h3 style={{ margin:0, fontSize:17, fontWeight:700, color:C.text, lineHeight:1.4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", minHeight:48 }}>{course.title}</h3>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:10 }}>
+            <span style={{ fontSize:14, color:C.textMid, fontWeight:600 }}>👨‍🏫 {course.instructor}</span>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:8, fontSize:11, color:C.textLight }}>
+          <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, fontSize:13, color:C.textMid }}>
             <span>🕐 {course.duration} 分鐘</span>
             <span>👁 {course.views||0}</span>
             {course.quiz?.length > 0 && <span>📝 {course.quiz.length} 題</span>}
@@ -1306,6 +1305,24 @@ function CourseAdmin({ categories, courses }) {
   const [quiz, setQuiz] = useState([]);  // 測驗題目
   const [files, setFiles] = useState([]);  // 課程附件（連結方式）
   const [saving, setSaving] = useState(false);
+  const coverFileRef = useRef(null);  // 封面圖上傳
+
+  // 圖片上傳處理（demo 階段：用瀏覽器本地預覽 base64）
+  // 未來換成公司伺服器：改成上傳到伺服器後取得網址
+  const handleCoverUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("請選擇圖片檔案"); return; }
+    if (file.size > 800 * 1024) {
+      alert("⚠️ Demo 階段限制：圖片需小於 800 KB。\n\n正式版改用公司伺服器後就沒有此限制。\n建議先用「圖片網址」方式，或壓縮圖片後再上傳。");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCoverUrl(ev.target.result);  // base64 字串
+    };
+    reader.readAsDataURL(file);
+  };
 
   const reset = () => {
     setTitle(""); setCategory(categories[0]?.id || ""); setInstructor(""); setDescription("");
@@ -1410,12 +1427,45 @@ function CourseAdmin({ categories, courses }) {
               </div>
               {/* 設定欄位 */}
               <div style={{ flex:1, minWidth:240 }}>
-                <Field label="封面圖網址（選填，留空則用底色 + 標題）">
-                  <input value={coverUrl} onChange={e => setCoverUrl(e.target.value)} placeholder="https://圖片網址.jpg" style={inp} />
+                {/* 上傳圖片按鈕 */}
+                <div style={{ marginBottom:12 }}>
+                  <label style={{ display:"block", color:C.textMid, fontSize:12, marginBottom:4, fontWeight:500 }}>方式一：上傳圖片</label>
+                  <input
+                    ref={coverFileRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCoverUpload}
+                    style={{ display:"none" }}
+                  />
+                  <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                    <Btn onClick={() => coverFileRef.current?.click()} variant="outline" style={{ fontSize:12 }}>
+                      📤 選擇圖片上傳
+                    </Btn>
+                    {coverUrl && coverUrl.startsWith("data:") && (
+                      <span style={{ fontSize:11, color:C.success }}>✅ 已選擇圖片</span>
+                    )}
+                  </div>
+                  <p style={{ fontSize:10, color:C.warning, margin:"5px 0 0", lineHeight:1.6 }}>
+                    ⚠️ Demo 階段：上傳圖片需小於 800 KB（暫存於資料庫）。<br />
+                    未來改用公司伺服器後，可上傳大圖且無容量限制。
+                  </p>
+                </div>
+
+                <div style={{ height:1, background:C.border, margin:"12px 0" }} />
+
+                <Field label="方式二：貼圖片網址">
+                  <input value={coverUrl.startsWith("data:") ? "" : coverUrl} onChange={e => setCoverUrl(e.target.value)} placeholder="https://圖片網址.jpg" style={inp} disabled={coverUrl.startsWith("data:")} />
                 </Field>
                 <p style={{ fontSize:10, color:C.textLight, margin:"-4px 0 10px", lineHeight:1.6 }}>
-                  💡 可貼任何公開圖片網址（建議 16:9 比例，如 1280×720）。圖片需設為公開可存取。
+                  💡 建議 16:9 比例（如 1280×720）。圖片需設為公開可存取。
                 </p>
+
+                {coverUrl && (
+                  <Btn onClick={() => setCoverUrl("")} variant="danger" style={{ fontSize:11, padding:"4px 10px", marginBottom:10 }}>
+                    ✕ 清除封面圖
+                  </Btn>
+                )}
+
                 <Field label="底色（沒有封面圖時顯示）">
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <input type="color" value={coverColor} onChange={e => setCoverColor(e.target.value)} style={{ width:40, height:32, border:"none", padding:0, borderRadius:5, cursor:"pointer", background:"transparent" }} />
