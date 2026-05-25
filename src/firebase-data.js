@@ -6,7 +6,8 @@ import {
   onAuthStateChanged,
   updatePassword,
   EmailAuthProvider,
-  reauthenticateWithCredential
+  reauthenticateWithCredential,
+  sendPasswordResetEmail
 } from "firebase/auth";
 import {
   collection,
@@ -301,6 +302,89 @@ export const toggleReviewHelpful = async (reviewId, userId, currentHelpfulIds) =
 // 刪除評價（自己或管理員）
 export const deleteReview = async (reviewId) => {
   await deleteDoc(doc(db, "reviews", reviewId));
+};
+
+// ───────────────────────────────────────────
+// 忘記密碼（使用 Firebase 內建寄信，免費可用）
+// ───────────────────────────────────────────
+export const sendResetPasswordEmail = async (email) => {
+  await sendPasswordResetEmail(auth, email);
+};
+
+// ───────────────────────────────────────────
+// 問答系統（questions collection）
+// 同仁向講師提問 → 講師小幫手在後台回覆 → 可選擇分享到課後交流
+// ───────────────────────────────────────────
+
+// 訂閱某課程的所有提問（後台課程小幫手用）
+export const watchCourseQuestions = (courseId, callback) => {
+  const q = query(collection(db, "questions"), where("courseId", "==", courseId));
+  return onSnapshot(q, (snap) => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(list);
+  });
+};
+
+// 訂閱所有提問（後台總覽、未讀通知計算用）
+export const watchAllQuestions = (callback) => {
+  return onSnapshot(collection(db, "questions"), (snap) => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(list);
+  });
+};
+
+// 訂閱「我提出的問題」（前台同仁的信箱用）
+export const watchMyQuestions = (userId, callback) => {
+  const q = query(collection(db, "questions"), where("userId", "==", userId));
+  return onSnapshot(q, (snap) => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(list);
+  });
+};
+
+// 同仁提出問題
+export const addQuestion = async (data) => {
+  await addDoc(collection(db, "questions"), {
+    userId: data.userId,
+    userName: data.userName,
+    userEmail: data.userEmail || "",   // 同仁公司信箱（未來寄通知用）
+    courseId: data.courseId,
+    courseName: data.courseName,
+    helperEmail: data.helperEmail || "",  // 課程小幫手信箱（未來寄通知用）
+    subject: data.subject,
+    content: data.content,
+    status: "pending",      // pending（待回覆）/ answered（已回覆）
+    answer: "",             // 講師回覆內容
+    answeredAt: null,
+    shared: false,          // 是否分享到課後交流
+    readByUser: true,       // 同仁是否已讀回覆（提問當下視為已讀，回覆後設 false）
+    createdAt: serverTimestamp(),
+  });
+};
+
+// 講師小幫手回覆問題
+export const answerQuestion = async (questionId, answer) => {
+  await updateDoc(doc(db, "questions", questionId), {
+    answer,
+    status: "answered",
+    answeredAt: serverTimestamp(),
+    readByUser: false,   // 回覆後，同仁尚未讀 → 信箱顯示紅點
+  });
+};
+
+// 同仁讀取回覆（清除未讀紅點）
+export const markQuestionRead = async (questionId) => {
+  await updateDoc(doc(db, "questions", questionId), { readByUser: true });
+};
+
+// 切換「分享到課後交流」（綠燈/反灰）
+export const toggleQuestionShared = async (questionId, shared) => {
+  await updateDoc(doc(db, "questions", questionId), { shared });
+};
+
+// 刪除問題
+export const deleteQuestion = async (questionId) => {
+  await deleteDoc(doc(db, "questions", questionId));
 };
 
 // ───────────────────────────────────────────
