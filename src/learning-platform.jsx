@@ -8,6 +8,8 @@ import {
   watchUserHistory, recordWatchProgress, watchAllWatchHistory,
   watchAllQuizResults, saveQuizResult, deleteQuizResult, deleteQuizResultsBatch,
   watchCourseReviews, watchAllReviews, saveReview, toggleReviewHelpful, deleteReview,
+  sendResetPasswordEmail,
+  watchCourseQuestions, watchAllQuestions, watchMyQuestions, addQuestion, answerQuestion, markQuestionRead, toggleQuestionShared, deleteQuestion,
   initializeDefaultData
 } from "./firebase-data";
 
@@ -391,6 +393,10 @@ function Login({ error, onError }) {
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
   const [localErr, setLocalErr] = useState("");
+  const [showForgot, setShowForgot] = useState(false);  // 忘記密碼視窗
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetMsg, setResetMsg] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
 
   const submit = async () => {
     setLocalErr("");
@@ -409,6 +415,24 @@ function Login({ error, onError }) {
       setLocalErr(msg);
       setLoading(false);
     }
+  };
+
+  const sendReset = async () => {
+    setResetMsg("");
+    if (!resetEmail.trim()) { setResetMsg("請輸入您的電子信箱"); return; }
+    setResetLoading(true);
+    try {
+      await sendResetPasswordEmail(resetEmail.trim());
+      setResetMsg("✅ 重設密碼信件已寄出！請至信箱收信（也請檢查垃圾郵件匣）。");
+    } catch (e) {
+      const msg = e.code === "auth/user-not-found"
+        ? "查無此信箱，請確認輸入正確"
+        : e.code === "auth/invalid-email"
+        ? "信箱格式不正確"
+        : "寄送失敗：" + e.message;
+      setResetMsg("⚠️ " + msg);
+    }
+    setResetLoading(false);
   };
 
   const displayErr = localErr || error;
@@ -446,8 +470,34 @@ function Login({ error, onError }) {
           <button onClick={submit} disabled={loading} style={{ width:"100%", padding:12, borderRadius:9, border:"none", background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, color:C.navyDark, fontSize:14, fontWeight:700, cursor:"pointer", marginTop:4, opacity:loading?0.7:1, boxShadow:`0 4px 12px ${C.gold}30` }}>
             {loading ? "登入中..." : "登入"}
           </button>
+          <button onClick={() => { setShowForgot(true); setResetEmail(email); setResetMsg(""); }} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.6)", fontSize:12, cursor:"pointer", marginTop:2, textDecoration:"underline" }}>
+            忘記密碼？
+          </button>
         </div>
       </div>
+
+      {/* 忘記密碼彈窗 */}
+      {showForgot && (
+        <div onClick={() => setShowForgot(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#FFF", borderRadius:14, padding:"24px 22px", width:"100%", maxWidth:380, boxShadow:"0 24px 48px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ fontSize:17, fontWeight:700, color:C.text, margin:"0 0 6px" }}>🔑 重設密碼</h3>
+            <p style={{ fontSize:12, color:C.textMid, margin:"0 0 16px", lineHeight:1.6 }}>
+              輸入您的電子信箱，系統會寄送重設密碼的連結到您的信箱。
+            </p>
+            <label style={{ display:"block", color:C.textMid, fontSize:12, marginBottom:4 }}>電子信箱</label>
+            <input value={resetEmail} onChange={e => setResetEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && sendReset()} placeholder="your@lkeng.com" style={inp} />
+            {resetMsg && (
+              <div style={{ marginTop:10, padding:"8px 10px", borderRadius:7, fontSize:12, lineHeight:1.5, background: resetMsg.startsWith("✅") ? `${C.success}12` : `${C.danger}12`, color: resetMsg.startsWith("✅") ? C.success : C.danger }}>
+                {resetMsg}
+              </div>
+            )}
+            <div style={{ display:"flex", gap:8, marginTop:16, justifyContent:"flex-end" }}>
+              <Btn onClick={() => setShowForgot(false)} variant="outline">關閉</Btn>
+              <Btn onClick={sendReset} disabled={resetLoading} variant="gold">{resetLoading ? "寄送中..." : "寄送重設信"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -529,6 +579,7 @@ function Front({ currentUser, onLogout, setView }) {
   const [allCourses, setAllCourses] = useState([]);
   const [watchHistory, setWatchHistory] = useState({});
   const [quizResults, setQuizResults] = useState({});
+  const [myQuestions, setMyQuestions] = useState([]);  // 我提出的問題（含講師回覆）
   const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
@@ -537,9 +588,13 @@ function Front({ currentUser, onLogout, setView }) {
       watchCourses((cs) => { setAllCourses(cs); setDataLoading(false); }),
       watchUserHistory(currentUser.id, setWatchHistory),
       watchAllQuizResults(setQuizResults),
+      watchMyQuestions(currentUser.id, setMyQuestions),
     ];
     return () => unsubs.forEach(u => u());
   }, [currentUser.id]);
+
+  // 未讀回覆數（信箱紅點）：已回覆但同仁還沒讀
+  const unreadCount = myQuestions.filter(q => q.status === "answered" && !q.readByUser).length;
 
   const sortedCategories = useMemo(() =>
     [...categories].sort((a,b) => (a.order ?? 9999) - (b.order ?? 9999)),
@@ -650,7 +705,7 @@ function Front({ currentUser, onLogout, setView }) {
         {/* 右側：後台 + 信箱 + 頭像 + 登出，靠最右 */}
         <div style={{ display:"flex", alignItems:"center", gap:10, marginLeft:"auto", flexShrink:0 }}>
           {currentUser.role==="admin" && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
-          {/* 信箱 icon（站內信，第三批會接上通知）*/}
+          {/* 信箱 icon（站內信通知）*/}
           <button
             onClick={() => setPage("inbox")}
             title="我的信箱"
@@ -659,8 +714,10 @@ function Front({ currentUser, onLogout, setView }) {
             onMouseOut={e => { e.currentTarget.style.background = page==="inbox" ? `${C.navy}12` : "transparent"; }}
           >
             ✉️
-            {/* 未讀紅點（第三批接上資料後顯示）*/}
-            {/* <span style={{ position:"absolute", top:4, right:4, width:8, height:8, borderRadius:"50%", background:C.danger, border:"1.5px solid #FFF" }} /> */}
+            {/* 未讀紅點 */}
+            {unreadCount > 0 && (
+              <span style={{ position:"absolute", top:2, right:2, minWidth:16, height:16, padding:"0 4px", borderRadius:8, background:C.danger, color:"#FFF", fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", border:"1.5px solid #FFF" }}>{unreadCount}</span>
+            )}
           </button>
           {/* 頭像 + 下拉 */}
           <div style={{ position:"relative" }}>
@@ -682,7 +739,7 @@ function Front({ currentUser, onLogout, setView }) {
                     <p style={{ margin:"2px 0 0", fontSize:11, color:C.textLight }}>{currentUser.empNo} · {currentUser.department}</p>
                   </div>
                   <button onClick={() => { setPage("profile"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 我的學習</button>
-                  <button onClick={() => { setPage("inbox"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✉️ 我的信箱</button>
+                  <button onClick={() => { setPage("inbox"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✉️ 我的信箱{unreadCount > 0 && <span style={{ marginLeft:"auto", minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:C.danger, color:"#FFF", fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>{unreadCount}</span>}</button>
                   <button onClick={() => { onLogout(); }} style={{ width:"100%", padding:"10px 14px", border:"none", borderTop:`1px solid ${C.border}`, background:"transparent", textAlign:"left", fontSize:13, color:C.danger, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=`${C.danger}08`} onMouseOut={e=>e.currentTarget.style.background="transparent"}>🚪 登出</button>
                 </div>
               </>
@@ -864,18 +921,146 @@ function Front({ currentUser, onLogout, setView }) {
       {page==="course" && selectedCourse && <CoursePage {...{categories:sortedCategories,course:selectedCourse,goBack:()=>{setSelectedCourse(null);setPage("home");},watchHistory,currentUser,recordWatch:handleRecordWatch,saveQuiz:handleSaveQuiz}} />}
 
       {page==="inbox" && (
-        <div style={{ padding:"24px 20px", maxWidth:800, margin:"0 auto" }}>
-          <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>✉️ 我的信箱</h2>
-          <p style={{ color:C.textLight, fontSize:12, marginBottom:18 }}>講師回覆、系統通知都會出現在這裡</p>
-          <div style={{ background:"#FFF", borderRadius:12, padding:48, border:`1px solid ${C.border}`, textAlign:"center" }}>
-            <div style={{ fontSize:48, marginBottom:12 }}>📭</div>
-            <p style={{ fontSize:14, color:C.textMid, fontWeight:600, margin:0 }}>目前沒有新訊息</p>
-            <p style={{ fontSize:12, color:C.textLight, margin:"8px 0 0", lineHeight:1.6 }}>
-              當您向講師提問、講師回覆後，<br />通知會出現在這裡。
-            </p>
-          </div>
+        <InboxPage myQuestions={myQuestions} courses={courses} currentUser={currentUser} onOpenCourse={(c) => { setSelectedCourse(c); setPage("course"); }} />
+      )}
+    </div>
+  );
+}
+
+/* ─── 前台：我的信箱（站內信：提問與講師回覆）─── */
+function InboxPage({ myQuestions, courses, currentUser, onOpenCourse }) {
+  const [expanded, setExpanded] = useState(null);  // 展開的問題 id
+
+  // 依時間排序（新到舊），未讀回覆優先
+  const sorted = [...myQuestions].sort((a,b) => {
+    const aUnread = a.status === "answered" && !a.readByUser;
+    const bUnread = b.status === "answered" && !b.readByUser;
+    if (aUnread !== bUnread) return aUnread ? -1 : 1;
+    const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+    const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+    return tb - ta;
+  });
+
+  const openQuestion = async (q) => {
+    const willExpand = expanded !== q.id;
+    setExpanded(willExpand ? q.id : null);
+    // 展開已回覆且未讀的 → 標記為已讀（清紅點）
+    if (willExpand && q.status === "answered" && !q.readByUser) {
+      try { await markQuestionRead(q.id); } catch (e) { console.error(e); }
+    }
+  };
+
+  return (
+    <div style={{ padding:"24px 20px", maxWidth:800, margin:"0 auto" }}>
+      <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>✉️ 我的信箱</h2>
+      <p style={{ color:C.textLight, fontSize:12, marginBottom:18 }}>您向講師提出的問題與回覆都會出現在這裡</p>
+
+      {sorted.length === 0 ? (
+        <div style={{ background:"#FFF", borderRadius:12, padding:48, border:`1px solid ${C.border}`, textAlign:"center" }}>
+          <div style={{ fontSize:48, marginBottom:12 }}>📭</div>
+          <p style={{ fontSize:14, color:C.textMid, fontWeight:600, margin:0 }}>目前沒有訊息</p>
+          <p style={{ fontSize:12, color:C.textLight, margin:"8px 0 0", lineHeight:1.6 }}>
+            在課程頁點「🙋 我想問問題」向講師提問，<br />回覆後會出現在這裡。
+          </p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {sorted.map(q => {
+            const course = courses.find(c => c.id === q.courseId);
+            const isUnread = q.status === "answered" && !q.readByUser;
+            const isOpen = expanded === q.id;
+            const answered = q.status === "answered";
+            return (
+              <div key={q.id} style={{ background:"#FFF", borderRadius:12, border:`1px solid ${isUnread ? C.gold+"70" : C.border}`, overflow:"hidden" }}>
+                {/* 標題列（可點開）*/}
+                <div onClick={() => openQuestion(q)} style={{ padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ fontSize:22, flexShrink:0 }}>{answered ? "📬" : "📨"}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ fontSize:14, fontWeight:600, color:C.text }}>{q.subject}</span>
+                      {isUnread && <span style={{ fontSize:10, padding:"1px 7px", borderRadius:8, background:C.danger, color:"#FFF", fontWeight:600 }}>新回覆</span>}
+                    </div>
+                    <p style={{ margin:"3px 0 0", fontSize:11, color:C.textLight }}>
+                      {course?.title || q.courseName} · {answered ? "✓ 講師已回覆" : "⏳ 等待回覆中"}
+                      {q.createdAt?.toDate && ` · ${q.createdAt.toDate().toLocaleDateString("zh-TW")}`}
+                    </p>
+                  </div>
+                  <span style={{ fontSize:12, color:C.textLight, flexShrink:0 }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+
+                {/* 展開內容 */}
+                {isOpen && (
+                  <div style={{ padding:"0 16px 16px", borderTop:`1px solid ${C.border}` }}>
+                    {/* 我的提問 */}
+                    <div style={{ marginTop:14, marginBottom:12 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                        <span style={{ fontSize:13 }}>🙋</span>
+                        <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>我的提問</span>
+                      </div>
+                      <p style={{ margin:0, fontSize:13, color:C.textMid, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{q.content}</p>
+                    </div>
+                    {/* 講師回覆 */}
+                    {answered ? (
+                      <div style={{ padding:"12px 14px", background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}30` }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                          <span style={{ fontSize:13 }}>👨‍🏫</span>
+                          <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>講師回覆</span>
+                          {q.answeredAt?.toDate && <span style={{ fontSize:10, color:C.textLight }}>· {q.answeredAt.toDate().toLocaleDateString("zh-TW")}</span>}
+                        </div>
+                        <p style={{ margin:0, fontSize:13, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{q.answer}</p>
+                      </div>
+                    ) : (
+                      <div style={{ padding:"10px 14px", background:C.bgSoft, borderRadius:8, fontSize:12, color:C.textLight, textAlign:"center" }}>
+                        ⏳ 講師尚未回覆，請耐心等候
+                      </div>
+                    )}
+                    {course && (
+                      <button onClick={() => onOpenCourse(course)} style={{ marginTop:10, padding:"6px 14px", borderRadius:7, border:`1px solid ${C.border}`, background:"#FFF", color:C.navy, fontSize:12, fontWeight:500, cursor:"pointer" }}>
+                        前往課程 →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── 文章內容渲染（解析 ## 標題、圖片網址、段落）─── */
+function ArticleRenderer({ content }) {
+  if (!content || !content.trim()) {
+    return <p style={{ color:C.textLight, fontSize:13, textAlign:"center", padding:30 }}>（本課程尚無內容）</p>;
+  }
+  // 以空行分段
+  const blocks = content.split(/\n\s*\n/).filter(b => b.trim());
+  const isImageUrl = (s) => /^https?:\/\/\S+\.(jpe?g|png|gif|webp|svg)(\?\S*)?$/i.test(s.trim());
+
+  return (
+    <div style={{ fontSize:15, lineHeight:1.9, color:C.text }}>
+      {blocks.map((block, i) => {
+        const trimmed = block.trim();
+        // 標題（## 開頭）
+        if (trimmed.startsWith("## ")) {
+          return <h2 key={i} style={{ fontSize:19, fontWeight:700, color:C.navy, margin:"24px 0 12px" }}>{trimmed.slice(3)}</h2>;
+        }
+        // 圖片網址（單獨一行）
+        if (isImageUrl(trimmed)) {
+          return <img key={i} src={trimmed} alt="" style={{ width:"100%", borderRadius:8, margin:"16px 0", display:"block" }} onError={(e)=>{e.target.style.display="none";}} />;
+        }
+        // 一般段落（段內換行轉成 <br>）
+        const lines = trimmed.split("\n");
+        return (
+          <p key={i} style={{ margin:"0 0 16px" }}>
+            {lines.map((line, j) => (
+              <span key={j}>{line}{j < lines.length-1 && <br />}</span>
+            ))}
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -889,6 +1074,11 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
   const [myRating, setMyRating] = useState(0);    // 我要給的星數
   const [myReviewText, setMyReviewText] = useState("");  // 我的評價內容
   const [savingReview, setSavingReview] = useState(false);
+  const [questions, setQuestions] = useState([]);   // 本課程所有提問
+  const [showAskModal, setShowAskModal] = useState(false);  // 我想問問題視窗
+  const [askSubject, setAskSubject] = useState("");
+  const [askContent, setAskContent] = useState("");
+  const [askingSubmit, setAskingSubmit] = useState(false);
   const historyRecord = watchHistory[`${currentUser.id}_${course.id}`];
   const progress = historyRecord?.progress || 0;
   const totalTime = historyRecord?.totalTime || 0;
@@ -896,6 +1086,7 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
   const currentChapter = course.chapters?.[activeCh];
   const videoInfo = parseVideoUrl(currentChapter?.youtubeUrl);  // 欄位名仍叫 youtubeUrl 是為了向後相容
   const hasEmbed = videoInfo && (videoInfo.type === "youtube" || videoInfo.type === "onedrive" || videoInfo.type === "sharepoint" || videoInfo.type === "vimeo");
+  const isArticle = course.contentType === "article";
 
   // ─── 訂閱本課程的評價 ───
   useEffect(() => {
@@ -934,6 +1125,47 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
     } catch (e) {
       console.error("toggle helpful failed:", e);
     }
+  };
+
+  // ─── 訂閱本課程的提問 ───
+  useEffect(() => {
+    const unsub = watchCourseQuestions(course.id, setQuestions);
+    return () => unsub && unsub();
+  }, [course.id]);
+
+  // 已分享到課後交流的問答（公開顯示，不透露提問者姓名）
+  const sharedQuestions = questions
+    .filter(q => q.shared && q.status === "answered")
+    .sort((a,b) => {
+      const ta = a.answeredAt?.toMillis ? a.answeredAt.toMillis() : 0;
+      const tb = b.answeredAt?.toMillis ? b.answeredAt.toMillis() : 0;
+      return tb - ta;
+    });
+
+  // 送出提問
+  const submitQuestion = async () => {
+    if (!askSubject.trim()) { alert("請輸入問題主旨"); return; }
+    if (!askContent.trim()) { alert("請輸入問題內容"); return; }
+    setAskingSubmit(true);
+    try {
+      await addQuestion({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userEmail: currentUser.email || "",
+        courseId: course.id,
+        courseName: course.title,
+        helperEmail: course.helperEmail || "",  // 課程小幫手信箱
+        subject: askSubject.trim(),
+        content: askContent.trim(),
+      });
+      setShowAskModal(false);
+      setAskSubject("");
+      setAskContent("");
+      alert("✅ 您的問題已送出！講師回覆後會在「我的信箱」通知您。");
+    } catch (e) {
+      alert("送出失敗：" + e.message);
+    }
+    setAskingSubmit(false);
   };
 
   // ─── 閒置偵測：一段時間沒操作 → 自動暫停影片並跳提示 ───
@@ -981,8 +1213,11 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
       // 進度依據累計觀看時間動態計算
       const newProgress = calculateProgress(totalTime + 1, course.duration);
       recordWatch(course.id, activeCh, newProgress);
+    } else if (isArticle) {
+      // 文章型課程：開啟即記錄為已閱讀（進度 100%）
+      recordWatch(course.id, 0, 100);
     }
-  }, [activeCh, videoInfo?.embedUrl]);
+  }, [activeCh, videoInfo?.embedUrl, isArticle]);
 
   if (showQuiz) return <Quiz course={course} goBack={() => setShowQuiz(false)} saveQuiz={saveQuiz} />;
 
@@ -1001,6 +1236,7 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
       <button onClick={goBack} style={{ border:"none", background:"none", color:C.navy, fontSize:12, cursor:"pointer", padding:0, fontWeight:500, marginBottom:12 }}>← 返回</button>
       <div style={{ display:"flex", gap:18, flexWrap:"wrap" }}>
         <div style={{ flex:"1 1 380px", minWidth:0 }}>
+          {!isArticle && (
           <div style={{ background:"#000", borderRadius:10, aspectRatio:"16/9", overflow:"hidden", position:"relative" }}>
             {hasEmbed && isIdle ? (
               /* 閒置暫停遮罩 */
@@ -1048,13 +1284,24 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
               </div>
             )}
           </div>
+          )}
+
+          {/* 文章型課程：顯示文章內容 */}
+          {isArticle && (
+            <div style={{ background:"#FFF", borderRadius:10, padding:"28px 30px", border:`1px solid ${C.border}` }}>
+              {course.coverUrl && (
+                <img src={course.coverUrl} alt={course.title} style={{ width:"100%", borderRadius:8, marginBottom:20, display:"block" }} onError={(e)=>{e.target.style.display="none";}} />
+              )}
+              <ArticleRenderer content={course.articleContent || ""} />
+            </div>
+          )}
           {/* YouTube 警告訊息已移除 */}
           <div style={{ marginTop:14 }}>
             <span style={{ fontSize:10, padding:"3px 7px", borderRadius:4, background:`${cat?.color||C.navy}12`, color:cat?.color||C.navy, fontWeight:500 }}>{cat?.name||"未分類"}</span>
             <span style={{ fontSize:11, color:C.textLight, marginLeft:8 }}>👁 {course.views||0}</span>
             <h1 style={{ fontSize:20, fontWeight:700, color:C.text, margin:"8px 0 4px" }}>{course.title}</h1>
-            <p style={{ fontSize:13, color:C.navy, margin:"4px 0 0", fontWeight:500 }}>目前章節：{currentChapter?.title}</p>
-            <p style={{ fontSize:12, color:C.textMid, margin:"4px 0 0" }}>講師：{course.instructor} · {course.duration} 分鐘</p>
+            {!isArticle && <p style={{ fontSize:13, color:C.navy, margin:"4px 0 0", fontWeight:500 }}>目前章節：{currentChapter?.title}</p>}
+            <p style={{ fontSize:12, color:C.textMid, margin:"4px 0 0" }}>講師：{course.instructor} · {isArticle ? `閱讀約 ${course.duration} 分鐘` : `${course.duration} 分鐘`}</p>
             {course.publishDate && (
               <p style={{ fontSize:12, color:C.textLight, margin:"2px 0 0" }}>授課日期：{course.publishDate}</p>
             )}
@@ -1103,6 +1350,7 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
               💡 觀看時數達課程時長 80% 即視為完成
             </p>
           </div>
+          {!isArticle && (
           <div style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}`, marginBottom:10 }}>
             <p style={{ margin:"0 0 8px", fontSize:12, fontWeight:600 }}>課程章節</p>
             {course.chapters?.map((ch,i) => {
@@ -1118,6 +1366,7 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
               );
             })}
           </div>
+          )}
           {course.quiz?.length > 0 && (
             <button onClick={() => setShowQuiz(true)} style={{ width:"100%", padding:11, borderRadius:9, border:"none", background:`linear-gradient(135deg, ${C.gold}, ${C.goldLight})`, color:C.navyDark, fontSize:13, fontWeight:600, cursor:"pointer", boxShadow:`0 2px 8px ${C.gold}30`, marginBottom:10 }}>
               📝 開始課後測驗（{course.quiz.length} 題）
@@ -1141,8 +1390,53 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
               ⭐ {myReview ? "查看 / 修改我的評價" : "我要評價"}
             </button>
           </div>
+          {/* 我想問問題 */}
+          <button
+            onClick={() => setShowAskModal(true)}
+            style={{ width:"100%", marginTop:10, padding:"12px", borderRadius:9, border:"none", background:`linear-gradient(135deg, #FF8C42, #FFA62B)`, color:"#FFF", fontSize:14, fontWeight:700, cursor:"pointer", boxShadow:"0 2px 8px rgba(255,140,66,0.3)", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}
+            onMouseOver={e => { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.boxShadow="0 4px 12px rgba(255,140,66,0.4)"; }}
+            onMouseOut={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="0 2px 8px rgba(255,140,66,0.3)"; }}
+          >
+            🙋 我想問問題
+          </button>
+          {sharedQuestions.length > 0 && (
+            <button onClick={() => { const el = document.getElementById("forum-section"); el?.scrollIntoView({ behavior:"smooth" }); }} style={{ width:"100%", marginTop:8, padding:"7px", borderRadius:7, border:`1px solid ${C.border}`, background:"#FFF", color:C.textMid, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+              💬 課後交流（{sharedQuestions.length}）
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ══════════ 課後交流（公開問答）══════════ */}
+      {sharedQuestions.length > 0 && (
+        <div id="forum-section" style={{ marginTop:28, maxWidth:780 }}>
+          <h2 style={{ fontSize:18, fontWeight:700, color:C.text, marginBottom:4 }}>💬 課後交流</h2>
+          <p style={{ fontSize:12, color:C.textLight, marginBottom:16 }}>講師精選的問答分享（為保護隱私，提問者統一以「學生」顯示）</p>
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {sharedQuestions.map(q => (
+              <div key={q.id} style={{ background:"#FFF", borderRadius:12, border:`1px solid ${C.border}`, overflow:"hidden" }}>
+                {/* 學生提問 */}
+                <div style={{ padding:"14px 16px", borderBottom:`1px solid ${C.border}` }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                    <span style={{ width:28, height:28, borderRadius:"50%", background:`${C.navy}12`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>🙋</span>
+                    <span style={{ fontSize:13, fontWeight:600, color:C.navy }}>學生提問</span>
+                  </div>
+                  <p style={{ margin:"0 0 4px", fontSize:14, fontWeight:600, color:C.text }}>{q.subject}</p>
+                  <p style={{ margin:0, fontSize:13, color:C.textMid, lineHeight:1.6 }}>{q.content}</p>
+                </div>
+                {/* 講師回覆 */}
+                <div style={{ padding:"14px 16px", background:`${C.gold}08` }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                    <span style={{ width:28, height:28, borderRadius:"50%", background:`${C.gold}25`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>👨‍🏫</span>
+                    <span style={{ fontSize:13, fontWeight:600, color:C.navy }}>講師回覆</span>
+                  </div>
+                  <p style={{ margin:0, fontSize:13, color:C.text, lineHeight:1.6 }}>{q.answer}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ══════════ 課程評價區塊 ══════════ */}
       <div id="review-section" style={{ marginTop:28, maxWidth:780 }}>
@@ -1243,6 +1537,31 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
           )}
         </div>
       </div>
+
+      {/* ══════════ 「我想問問題」彈窗 ══════════ */}
+      {showAskModal && (
+        <div onClick={() => setShowAskModal(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#FFF", borderRadius:14, width:"100%", maxWidth:480, maxHeight:"90vh", overflow:"auto", boxShadow:"0 24px 48px rgba(0,0,0,0.3)" }}>
+            <div style={{ padding:"18px 20px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(135deg, #FF8C42, #FFA62B)` }}>
+              <h3 style={{ fontSize:17, fontWeight:700, color:"#FFF", margin:0, display:"flex", alignItems:"center", gap:8 }}>🙋 我想問問題</h3>
+              <p style={{ fontSize:12, color:"rgba(255,255,255,0.9)", margin:"4px 0 0" }}>《{course.title}》</p>
+            </div>
+            <div style={{ padding:"20px" }}>
+              <div style={{ padding:"8px 12px", background:`${C.accent}10`, borderRadius:7, fontSize:11, color:C.navy, marginBottom:16, lineHeight:1.6 }}>
+                💡 您的問題會送給課程講師/小幫手，回覆後會在「✉️ 我的信箱」通知您。
+              </div>
+              <label style={{ display:"block", color:C.textMid, fontSize:12, marginBottom:4, fontWeight:500 }}>問題主旨</label>
+              <input value={askSubject} onChange={e => setAskSubject(e.target.value)} placeholder="例如：第二章的計算公式不太懂" style={{ ...inp, marginBottom:14 }} maxLength={50} />
+              <label style={{ display:"block", color:C.textMid, fontSize:12, marginBottom:4, fontWeight:500 }}>問題內容</label>
+              <textarea value={askContent} onChange={e => setAskContent(e.target.value)} rows={5} placeholder="請詳細描述您的問題..." style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13, resize:"vertical", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }} maxLength={500} />
+              <div style={{ display:"flex", gap:8, marginTop:18, justifyContent:"flex-end" }}>
+                <Btn onClick={() => setShowAskModal(false)} variant="outline">取消</Btn>
+                <Btn onClick={submitQuestion} disabled={askingSubmit} style={{ background:"linear-gradient(135deg, #FF8C42, #FFA62B)", border:"none", color:"#FFF" }}>{askingSubmit ? "送出中..." : "送出問題"}</Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1432,6 +1751,7 @@ function Admin({ currentUser, onLogout, setView }) {
   const [users, setUsers] = useState([]);
   const [quizResults, setQuizResults] = useState({});
   const [allWatchHistory, setAllWatchHistory] = useState([]);
+  const [questions, setQuestions] = useState([]);  // 所有提問
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1443,9 +1763,13 @@ function Admin({ currentUser, onLogout, setView }) {
       watchAllUsers(setUsers),
       watchAllQuizResults(setQuizResults),
       watchAllWatchHistory(setAllWatchHistory),
+      watchAllQuestions(setQuestions),
     ];
     return () => unsubs.forEach(u => u());
   }, []);
+
+  // 待回覆問題數（紅點通知）
+  const pendingQuestionsCount = questions.filter(q => q.status === "pending").length;
 
   const sortedCategories = useMemo(() =>
     [...categories].sort((a,b) => (a.order ?? 9999) - (b.order ?? 9999)),
@@ -1459,6 +1783,7 @@ function Admin({ currentUser, onLogout, setView }) {
     { id:"users", label:"使用者管理", icon:"👥" },
     { id:"analytics", label:"學習分析", icon:"📈" },
     { id:"quizzes", label:"測驗紀錄", icon:"📝" },
+    { id:"questions", label:"問答管理", icon:"🙋", badge: pendingQuestionsCount },
   ];
 
   if (loading) return <LoadingScreen text="載入後台資料..." />;
@@ -1474,7 +1799,9 @@ function Admin({ currentUser, onLogout, setView }) {
         <div style={{ flex:1, padding:"8px 6px" }}>
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ width:"100%", padding:"8px 10px", borderRadius:5, border:"none", background:tab===t.id?"rgba(255,255,255,0.12)":"transparent", color:tab===t.id?"#FFF":"rgba(255,255,255,0.5)", fontSize:12, cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:7, marginBottom:2, fontWeight:tab===t.id?500:400 }}>
-              <span style={{ fontSize:13 }}>{t.icon}</span>{t.label}
+              <span style={{ fontSize:13 }}>{t.icon}</span>
+              <span style={{ flex:1 }}>{t.label}</span>
+              {t.badge > 0 && <span style={{ fontSize:10, minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:C.danger, color:"#FFF", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:600 }}>{t.badge}</span>}
             </button>
           ))}
         </div>
@@ -1492,6 +1819,7 @@ function Admin({ currentUser, onLogout, setView }) {
         {tab==="users" && <UserAdmin users={users} />}
         {tab==="analytics" && <Analytics courses={courses} users={users} allWatchHistory={allWatchHistory} />}
         {tab==="quizzes" && <QuizRecords quizResults={quizResults} users={users} courses={courses} />}
+        {tab==="questions" && <QuestionAdmin questions={questions} courses={courses} />}
       </div>
     </div>
   );
@@ -1545,9 +1873,12 @@ function CourseAdmin({ categories, courses }) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState(categories[0]?.id || "");
   const [instructor, setInstructor] = useState("");
+  const [helperEmail, setHelperEmail] = useState("");  // 課程小幫手信箱
   const [description, setDescription] = useState("");
   const [coverUrl, setCoverUrl] = useState("");       // 封面圖網址
   const [coverColor, setCoverColor] = useState("#2C5F7C");  // 沒圖時的封面底色
+  const [contentType, setContentType] = useState("video");  // video（影片）/ article（文章）
+  const [articleContent, setArticleContent] = useState("");  // 文章型課程的內文
   const [chapters, setChapters] = useState([{ title:"第一章", duration:15, youtubeUrl:"" }]);
   const [quiz, setQuiz] = useState([]);  // 測驗題目
   const [files, setFiles] = useState([]);  // 課程附件（連結方式）
@@ -1572,16 +1903,18 @@ function CourseAdmin({ categories, courses }) {
   };
 
   const reset = () => {
-    setTitle(""); setCategory(categories[0]?.id || ""); setInstructor(""); setDescription("");
+    setTitle(""); setCategory(categories[0]?.id || ""); setInstructor(""); setHelperEmail(""); setDescription("");
     setCoverUrl(""); setCoverColor("#2C5F7C");
+    setContentType("video"); setArticleContent("");
     setChapters([{ title:"第一章", duration:15, youtubeUrl:"" }]);
     setQuiz([]);
     setFiles([]);
     setEditing(null); setShowForm(false);
   };
   const startEdit = (c) => {
-    setTitle(c.title); setCategory(c.category); setInstructor(c.instructor); setDescription(c.description);
+    setTitle(c.title); setCategory(c.category); setInstructor(c.instructor); setHelperEmail(c.helperEmail || ""); setDescription(c.description);
     setCoverUrl(c.coverUrl || ""); setCoverColor(c.coverColor || "#2C5F7C");
+    setContentType(c.contentType || "video"); setArticleContent(c.articleContent || "");
     setChapters((c.chapters||[{title:"第一章",duration:15,youtubeUrl:""}]).map(ch => ({ ...ch, youtubeUrl: ch.youtubeUrl || "" })));
     setQuiz(c.quiz || []);
     setFiles(c.files || []);
@@ -1598,17 +1931,20 @@ function CourseAdmin({ categories, courses }) {
       if (q.answer === undefined || q.answer === null) { alert(`第 ${i+1} 題未選擇正確答案`); return; }
     }
     setSaving(true);
-    const totalDuration = chapters.reduce((s,c) => s + (+c.duration||0), 0);
+    // 影片型：時長=各章節加總；文章型：估算閱讀時間（每 400 字約 1 分鐘）
+    const totalDuration = contentType === "article"
+      ? Math.max(1, Math.round(articleContent.length / 400))
+      : chapters.reduce((s,c) => s + (+c.duration||0), 0);
+    const courseData = { title, category, instructor, helperEmail, description, coverUrl, coverColor, contentType, articleContent, chapters, quiz, files, duration: totalDuration };
     try {
       if (editing) {
-        await updateCourse(editing, { title, category, instructor, description, coverUrl, coverColor, chapters, quiz, files, duration: totalDuration });
+        await updateCourse(editing, courseData);
       } else {
         await addCourse({
-          title, category, instructor, description, coverUrl, coverColor,
-          duration: totalDuration, thumbnail:"📘", views:0,
+          ...courseData,
+          thumbnail:"📘", views:0,
           publishDate: new Date().toISOString().split("T")[0],
           status: publishNow ? "published" : "draft",
-          files, chapters, quiz
         });
       }
       reset();
@@ -1646,6 +1982,7 @@ function CourseAdmin({ categories, courses }) {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px,1fr))", gap:10 }}>
             <Field label="課程名稱"><input value={title} onChange={e => setTitle(e.target.value)} style={inp} placeholder="例：5S 管理實務" /></Field>
             <Field label="講師"><input value={instructor} onChange={e => setInstructor(e.target.value)} style={inp} placeholder="講師姓名" /></Field>
+            <Field label="課程小幫手信箱"><input value={helperEmail} onChange={e => setHelperEmail(e.target.value)} style={inp} placeholder="收問題通知的信箱" /></Field>
             <Field label="分類">
               <select value={category} onChange={e => setCategory(e.target.value)} style={inp}>
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1653,6 +1990,23 @@ function CourseAdmin({ categories, courses }) {
             </Field>
           </div>
           <Field label="課程說明"><textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} style={{ ...inp, resize:"vertical" }} placeholder="課程內容說明..." /></Field>
+
+          {/* ══════ 課程類型選擇 ══════ */}
+          <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
+            <p style={{ margin:"0 0 10px", fontSize:13, fontWeight:600, color:C.text }}>📂 課程類型</p>
+            <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+              <button onClick={() => setContentType("video")} style={{ flex:1, minWidth:140, padding:"12px", borderRadius:8, border:`2px solid ${contentType==="video"?C.navy:C.border}`, background:contentType==="video"?`${C.navy}08`:"#FFF", cursor:"pointer", textAlign:"left" }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>🎬</div>
+                <div style={{ fontSize:13, fontWeight:600, color:contentType==="video"?C.navy:C.text }}>影片課程</div>
+                <div style={{ fontSize:10, color:C.textLight, marginTop:2 }}>章節 + 影片播放</div>
+              </button>
+              <button onClick={() => setContentType("article")} style={{ flex:1, minWidth:140, padding:"12px", borderRadius:8, border:`2px solid ${contentType==="article"?C.navy:C.border}`, background:contentType==="article"?`${C.navy}08`:"#FFF", cursor:"pointer", textAlign:"left" }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>📄</div>
+                <div style={{ fontSize:13, fontWeight:600, color:contentType==="article"?C.navy:C.text }}>文章課程</div>
+                <div style={{ fontSize:10, color:C.textLight, marginTop:2 }}>圖文閱讀內容</div>
+              </button>
+            </div>
+          </div>
 
           {/* ══════ 課程封面設定 ══════ */}
           <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
@@ -1727,11 +2081,32 @@ function CourseAdmin({ categories, courses }) {
             </div>
           </div>
 
-          <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-              <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📋 章節設定（每章節對應一支影片）</p>
-              <Btn onClick={addChapter} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增章節</Btn>
+          {/* 文章型課程：內文編輯區 */}
+          {contentType === "article" && (
+            <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
+              <p style={{ margin:"0 0 8px", fontSize:13, fontWeight:600, color:C.text }}>📄 文章內容</p>
+              <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.7 }}>
+                💡 <strong>排版小技巧：</strong><br />
+                • 空一行 = 分段落<br />
+                • 用「## 標題」開頭 = 顯示為小標題<br />
+                • 貼圖片網址（以 http 開頭、.jpg/.png 結尾，單獨一行）= 自動顯示圖片
+              </div>
+              <textarea
+                value={articleContent}
+                onChange={e => setArticleContent(e.target.value)}
+                rows={14}
+                placeholder={"在這裡輸入文章內容...\n\n## 第一段標題\n\n這是內文，可以寫很多字。空一行就會分段。\n\nhttps://example.com/圖片.jpg\n\n## 第二段標題\n\n繼續寫內容..."}
+                style={{ width:"100%", padding:"12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13, lineHeight:1.7, resize:"vertical", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}
+              />
+              <p style={{ fontSize:10, color:C.textLight, margin:"6px 0 0" }}>
+                目前約 {articleContent.length} 字，預估閱讀時間 {Math.max(1, Math.round(articleContent.length / 400))} 分鐘
+              </p>
             </div>
+          )}
+
+          {/* 影片型課程：章節設定區 */}
+          {contentType === "video" && (
+          <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
             <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.7 }}>
               💡 <strong>支援的影片來源：</strong><br />
               <strong>▶ YouTube</strong>：貼上影片網址（公開或不公開且允許嵌入）<br />
@@ -1771,6 +2146,7 @@ function CourseAdmin({ categories, courses }) {
               </div>
             ))}
           </div>
+          )}
 
           {/* ══════ 測驗題目編輯區 ══════ */}
           <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
@@ -2665,6 +3041,178 @@ function QuizDetailModal({ record, courses, onClose }) {
           <Btn onClick={onClose} variant="outline">關閉</Btn>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   後台問答管理（課程小幫手回覆 + 分享）
+   ══════════════════════════════════════ */
+function QuestionAdmin({ questions, courses }) {
+  const [filterCourse, setFilterCourse] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");  // all / pending / answered
+  const [answerText, setAnswerText] = useState({});  // {questionId: "回覆內容"}
+  const [savingId, setSavingId] = useState(null);
+
+  const filtered = questions
+    .filter(q => !filterCourse || q.courseId === filterCourse)
+    .filter(q => filterStatus === "all" || q.status === filterStatus)
+    .sort((a,b) => {
+      // 待回覆優先，其次依時間新到舊
+      if (a.status !== b.status) return a.status === "pending" ? -1 : 1;
+      const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return tb - ta;
+    });
+
+  const submitAnswer = async (q) => {
+    const text = (answerText[q.id] || "").trim();
+    if (!text) { alert("請輸入回覆內容"); return; }
+    setSavingId(q.id);
+    try {
+      await answerQuestion(q.id, text);
+      setAnswerText(prev => { const n = {...prev}; delete n[q.id]; return n; });
+    } catch (e) {
+      alert("回覆失敗：" + e.message);
+    }
+    setSavingId(null);
+  };
+
+  const handleShare = async (q, shared) => {
+    try {
+      await toggleQuestionShared(q.id, shared);
+    } catch (e) {
+      alert("操作失敗：" + e.message);
+    }
+  };
+
+  const handleDelete = async (q) => {
+    if (!confirm(`確定刪除這則提問？\n\n主旨：${q.subject}\n\n⚠️ 此操作無法復原`)) return;
+    try {
+      await deleteQuestion(q.id);
+    } catch (e) {
+      alert("刪除失敗：" + e.message);
+    }
+  };
+
+  const pendingCount = questions.filter(q => q.status === "pending").length;
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+        <h2 style={{ fontSize:18, fontWeight:700, color:C.text, margin:0 }}>🙋 問答管理</h2>
+        {pendingCount > 0 && <span style={{ fontSize:12, padding:"4px 12px", borderRadius:14, background:`${C.danger}12`, color:C.danger, fontWeight:600 }}>{pendingCount} 則待回覆</span>}
+      </div>
+
+      <div style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}`, marginBottom:14, display:"flex", gap:10, flexWrap:"wrap" }}>
+        <div style={{ flex:1, minWidth:160 }}>
+          <label style={{ display:"block", fontSize:11, color:C.textLight, marginBottom:4 }}>篩選課程</label>
+          <select value={filterCourse} onChange={e => setFilterCourse(e.target.value)} style={inp}>
+            <option value="">全部課程</option>
+            {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+        </div>
+        <div style={{ flex:1, minWidth:160 }}>
+          <label style={{ display:"block", fontSize:11, color:C.textLight, marginBottom:4 }}>狀態</label>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={inp}>
+            <option value="all">全部</option>
+            <option value="pending">待回覆</option>
+            <option value="answered">已回覆</option>
+          </select>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign:"center", padding:48, color:C.textLight, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}` }}>
+          <p style={{ fontSize:40, margin:0 }}>📭</p>
+          <p style={{ fontSize:14, margin:"10px 0 0" }}>目前沒有符合條件的提問</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {filtered.map(q => {
+            const course = courses.find(c => c.id === q.courseId);
+            const isPending = q.status === "pending";
+            return (
+              <div key={q.id} style={{ background:"#FFF", borderRadius:12, border:`1px solid ${isPending ? C.warning+"60" : C.border}`, overflow:"hidden" }}>
+                {/* 標頭 */}
+                <div style={{ padding:"12px 16px", background: isPending ? `${C.warning}08` : C.bgSoft, borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                    <span style={{ fontSize:11, padding:"3px 9px", borderRadius:10, background: isPending ? `${C.warning}20` : `${C.success}15`, color: isPending ? C.warning : C.success, fontWeight:600 }}>
+                      {isPending ? "● 待回覆" : "✓ 已回覆"}
+                    </span>
+                    <span style={{ fontSize:12, color:C.textMid }}>{course?.title || q.courseName || "未知課程"}</span>
+                    {q.helperEmail && <span style={{ fontSize:11, color:C.textLight }}>· 小幫手：{q.helperEmail}</span>}
+                  </div>
+                  <span style={{ fontSize:11, color:C.textLight }}>{q.createdAt?.toDate ? q.createdAt.toDate().toLocaleString("zh-TW") : ""}</span>
+                </div>
+
+                <div style={{ padding:"14px 16px" }}>
+                  {/* 提問者 + 內容 */}
+                  <div style={{ marginBottom:12 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                      <span style={{ width:28, height:28, borderRadius:"50%", background:`${C.navy}12`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, flexShrink:0 }}>🙋</span>
+                      <div>
+                        <span style={{ fontSize:13, fontWeight:600, color:C.text }}>{q.userName}</span>
+                        {q.userEmail && <span style={{ fontSize:11, color:C.textLight, marginLeft:6 }}>{q.userEmail}</span>}
+                      </div>
+                    </div>
+                    <p style={{ margin:"0 0 4px", fontSize:14, fontWeight:600, color:C.text }}>{q.subject}</p>
+                    <p style={{ margin:0, fontSize:13, color:C.textMid, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{q.content}</p>
+                  </div>
+
+                  {/* 回覆區 */}
+                  {q.status === "answered" ? (
+                    <div style={{ padding:"12px 14px", background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}30` }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                        <span style={{ fontSize:13 }}>👨‍🏫</span>
+                        <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>講師回覆</span>
+                        {q.answeredAt?.toDate && <span style={{ fontSize:10, color:C.textLight }}>· {q.answeredAt.toDate().toLocaleDateString("zh-TW")}</span>}
+                      </div>
+                      <p style={{ margin:0, fontSize:13, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{q.answer}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <textarea
+                        value={answerText[q.id] || ""}
+                        onChange={e => setAnswerText(prev => ({ ...prev, [q.id]: e.target.value }))}
+                        rows={3}
+                        placeholder="輸入回覆內容..."
+                        style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13, resize:"vertical", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}
+                      />
+                      <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8 }}>
+                        <Btn onClick={() => submitAnswer(q)} disabled={savingId===q.id} variant="gold">{savingId===q.id ? "送出中..." : "送出回覆"}</Btn>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 操作列：分享 / 取消分享 / 刪除 */}
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:12, paddingTop:12, borderTop:`1px solid ${C.border}`, flexWrap:"wrap" }}>
+                    {q.status === "answered" && (
+                      <>
+                        <button
+                          onClick={() => handleShare(q, true)}
+                          disabled={q.shared}
+                          style={{ padding:"6px 14px", borderRadius:7, border:"none", fontSize:12, fontWeight:600, cursor: q.shared ? "default" : "pointer", background: q.shared ? `${C.textLight}30` : C.success, color: q.shared ? C.textLight : "#FFF", display:"flex", alignItems:"center", gap:5 }}
+                        >
+                          {q.shared ? "✓ 已分享至課後交流" : "🟢 分享至課後交流"}
+                        </button>
+                        <button
+                          onClick={() => handleShare(q, false)}
+                          disabled={!q.shared}
+                          style={{ padding:"6px 14px", borderRadius:7, border:`1px solid ${!q.shared ? C.textLight+"30" : C.warning}`, fontSize:12, fontWeight:600, cursor: !q.shared ? "default" : "pointer", background:"#FFF", color: !q.shared ? C.textLight : C.warning }}
+                        >
+                          取消分享
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => handleDelete(q)} style={{ marginLeft:"auto", padding:"6px 12px", borderRadius:7, border:`1px solid ${C.danger}40`, background:"#FFF", color:C.danger, fontSize:12, cursor:"pointer", fontWeight:500 }}>🗑️ 刪除</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
