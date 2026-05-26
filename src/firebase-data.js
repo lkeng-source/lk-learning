@@ -118,6 +118,22 @@ export const updateUserData = async (uid, data) => {
   await updateDoc(doc(db, "users", uid), data);
 };
 
+// 即時訂閱單一使用者資料（含收藏 favorites）
+export const watchUserData = (uid, callback) => {
+  return onSnapshot(doc(db, "users", uid), (snap) => {
+    if (snap.exists()) callback({ id: snap.id, ...snap.data() });
+  });
+};
+
+// 切換收藏課程（favorites 陣列存課程 id）
+export const toggleFavorite = async (uid, courseId, currentFavorites) => {
+  const favs = Array.isArray(currentFavorites) ? currentFavorites : [];
+  const next = favs.includes(courseId)
+    ? favs.filter(id => id !== courseId)
+    : [...favs, courseId];
+  await updateDoc(doc(db, "users", uid), { favorites: next });
+};
+
 export const deleteUserData = async (uid) => {
   // 注意：這只刪 Firestore 資料，Auth 帳號要在 Firebase Console 刪
   await deleteDoc(doc(db, "users", uid));
