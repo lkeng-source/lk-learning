@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import {
   loginWithEmail, logoutUser, watchAuthState, changePassword,
   getCurrentUserData, getAllUsers, watchAllUsers, createUserAccount, updateUserData, deleteUserData,
+  watchUserData, toggleFavorite,
   watchCourses, addCourse, updateCourse, deleteCourse, incrementViews,
   watchCategories, addCategory, updateCategory, deleteCategory,
   watchUserHistory, recordWatchProgress, watchAllWatchHistory,
@@ -565,14 +566,29 @@ function ChangePasswordModal({ currentUser, onClose, force }) {
 /* ══════════════════════════════════════
    FRONT - 前台
    ══════════════════════════════════════ */
+/* ─── 空狀態提示元件 ─── */
+function EmptyState({ icon, title, hint, actionLabel, onAction }) {
+  return (
+    <div style={{ textAlign:"center", padding:"56px 20px", color:C.textLight, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}` }}>
+      <p style={{ fontSize:46, margin:0 }}>{icon}</p>
+      <p style={{ fontSize:15, color:C.textMid, fontWeight:600, margin:"14px 0 4px" }}>{title}</p>
+      {hint && <p style={{ fontSize:12, margin:0 }}>{hint}</p>}
+      {actionLabel && onAction && (
+        <button onClick={onAction} style={{ marginTop:16, padding:"8px 20px", borderRadius:8, border:"none", background:C.navy, color:"#FFF", fontSize:13, fontWeight:600, cursor:"pointer" }}>{actionLabel}</button>
+      )}
+    </div>
+  );
+}
+
 function Front({ currentUser, onLogout, setView }) {
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState("courses");
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("all");
   const [showPwModal, setShowPwModal] = useState(currentUser.mustChangePw || false);
   const [quizDetailRecord, setQuizDetailRecord] = useState(null);  // 查看自己過往的測驗詳解
   const [showUserMenu, setShowUserMenu] = useState(false);  // 頭像下拉選單
+  const [learnTab, setLearnTab] = useState("progress");  // 我的學習分頁：progress/done/fav/quiz
 
   // 即時資料訂閱
   const [categories, setCategories] = useState([]);
@@ -580,6 +596,7 @@ function Front({ currentUser, onLogout, setView }) {
   const [watchHistory, setWatchHistory] = useState({});
   const [quizResults, setQuizResults] = useState({});
   const [myQuestions, setMyQuestions] = useState([]);  // 我提出的問題（含講師回覆）
+  const [userData, setUserData] = useState(currentUser);  // 即時使用者資料（含收藏）
   const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
@@ -589,9 +606,16 @@ function Front({ currentUser, onLogout, setView }) {
       watchUserHistory(currentUser.id, setWatchHistory),
       watchAllQuizResults(setQuizResults),
       watchMyQuestions(currentUser.id, setMyQuestions),
+      watchUserData(currentUser.id, setUserData),
     ];
     return () => unsubs.forEach(u => u());
   }, [currentUser.id]);
+
+  const favorites = userData?.favorites || [];
+  const handleToggleFavorite = async (courseId) => {
+    try { await toggleFavorite(currentUser.id, courseId, favorites); }
+    catch (e) { console.error("toggle favorite failed:", e); }
+  };
 
   // 未讀回覆數（信箱紅點）：已回覆但同仁還沒讀
   const unreadCount = myQuestions.filter(q => q.status === "answered" && !q.readByUser).length;
@@ -652,6 +676,8 @@ function Front({ currentUser, onLogout, setView }) {
   const Card = ({ course }) => {
     const cat = sortedCategories.find(c => c.id===course.category);
     const coverColor = course.coverColor || cat?.color || C.navy;
+    const isFav = favorites.includes(course.id);
+    const isArticle = course.contentType === "article";
     return (
       <div onClick={() => { setSelectedCourse(course); setPage("course"); }} style={{ background:"#FFF", borderRadius:12, overflow:"hidden", cursor:"pointer", border:`1px solid ${C.border}`, transition:"all 0.2s", display:"flex", flexDirection:"column" }}
         onMouseOver={e => { e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow="0 12px 24px rgba(0,0,0,0.12)"; }}
@@ -662,12 +688,22 @@ function Front({ currentUser, onLogout, setView }) {
             <img src={course.coverUrl} alt={course.title} style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; e.target.parentElement.style.background=`linear-gradient(135deg, ${coverColor}, ${coverColor}CC)`; }} />
           ) : (
             <div style={{ textAlign:"center", color:"#FFF", padding:14 }}>
-              <div style={{ fontSize:34, marginBottom:6, opacity:0.9 }}>📘</div>
+              <div style={{ fontSize:34, marginBottom:6, opacity:0.9 }}>{isArticle ? "📄" : "📘"}</div>
               <div style={{ fontSize:14, fontWeight:700, lineHeight:1.3, textShadow:"0 1px 3px rgba(0,0,0,0.2)" }}>{course.title}</div>
             </div>
           )}
           {/* 分類標籤浮在封面左上 */}
           <span style={{ position:"absolute", top:8, left:8, fontSize:10, padding:"3px 8px", borderRadius:12, background:"rgba(255,255,255,0.92)", color:coverColor, fontWeight:600, backdropFilter:"blur(4px)" }}>{cat?.icon} {cat?.name||"未分類"}</span>
+          {/* 收藏愛心（右上）*/}
+          <button
+            onClick={(e) => { e.stopPropagation(); handleToggleFavorite(course.id); }}
+            title={isFav ? "取消收藏" : "加入收藏"}
+            style={{ position:"absolute", top:6, right:6, width:32, height:32, borderRadius:"50%", border:"none", background:"rgba(255,255,255,0.92)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, backdropFilter:"blur(4px)", transition:"transform 0.15s" }}
+            onMouseOver={e => e.currentTarget.style.transform="scale(1.15)"}
+            onMouseOut={e => e.currentTarget.style.transform="scale(1)"}
+          >
+            {isFav ? "❤️" : "🤍"}
+          </button>
         </div>
         {/* 內容 */}
         <div style={{ padding:16, flex:1, display:"flex", flexDirection:"column" }}>
@@ -676,7 +712,7 @@ function Front({ currentUser, onLogout, setView }) {
             <span style={{ fontSize:14, color:C.textMid, fontWeight:600 }}>👨‍🏫 {course.instructor}</span>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, fontSize:13, color:C.textMid }}>
-            <span>🕐 {course.duration} 分鐘</span>
+            <span>{isArticle ? "📄 圖文" : `🕐 ${course.duration} 分鐘`}</span>
             <span>👁 {course.views||0}</span>
             {course.quiz?.length > 0 && <span>📝 {course.quiz.length} 題</span>}
           </div>
@@ -690,7 +726,7 @@ function Front({ currentUser, onLogout, setView }) {
       {showPwModal && <ChangePasswordModal currentUser={currentUser} onClose={() => setShowPwModal(false)} force={currentUser.mustChangePw} />}
 
       <div style={{ background:"#FFF", borderBottom:`2px solid ${C.gold}40`, padding:"0 20px", display:"flex", alignItems:"center", height:56, gap:12, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(0,0,0,0.04)", flexWrap:"wrap" }}>
-        <div onClick={() => { setSelectedCourse(null); setPage("home"); }} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", flexShrink:0 }}>
+        <div onClick={() => { setSelectedCourse(null); setPage("courses"); }} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", flexShrink:0 }}>
           <LKLogo size={22} color={C.gold} />
           <span style={{ fontSize:15, fontWeight:700, color:C.navy }}>亞翔學習</span>
         </div>
@@ -698,7 +734,7 @@ function Front({ currentUser, onLogout, setView }) {
           <input value={search} onChange={e => { setSearch(e.target.value); if (page !== "courses") setPage("courses"); }} placeholder="🔍 搜尋課程、講師..." style={{ width:"100%", padding:"8px 16px", borderRadius:20, border:`1px solid ${C.border}`, fontSize:13, outline:"none", boxSizing:"border-box", background:C.bg }} />
         </div>
         <div style={{ display:"flex", gap:2 }}>
-          {[{l:"首頁",p:"home"},{l:"課程",p:"courses"},{l:"我的",p:"profile"}].map(n => (
+          {[{l:"探索課程",p:"courses"},{l:"我的學習",p:"profile"}].map(n => (
             <button key={n.p} onClick={() => setPage(n.p)} style={{ padding:"6px 12px", borderRadius:8, border:"none", background:page===n.p?`${C.navy}10`:"transparent", color:page===n.p?C.navy:C.textLight, fontWeight:page===n.p?600:400, fontSize:13, cursor:"pointer" }}>{n.l}</button>
           ))}
         </div>
@@ -738,7 +774,9 @@ function Front({ currentUser, onLogout, setView }) {
                     <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>{currentUser.name}</p>
                     <p style={{ margin:"2px 0 0", fontSize:11, color:C.textLight }}>{currentUser.empNo} · {currentUser.department}</p>
                   </div>
-                  <button onClick={() => { setPage("profile"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 我的學習</button>
+                  <button onClick={() => { setPage("settings"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 個人檔案</button>
+                  <button onClick={() => { setPage("profile"); setLearnTab("fav"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>❤️ 我的收藏{favorites.length > 0 && <span style={{ marginLeft:"auto", fontSize:11, color:C.textLight }}>{favorites.length}</span>}</button>
+                  <button onClick={() => { setPage("settings"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>⚙️ 帳號設定</button>
                   <button onClick={() => { setPage("inbox"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✉️ 我的信箱{unreadCount > 0 && <span style={{ marginLeft:"auto", minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:C.danger, color:"#FFF", fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>{unreadCount}</span>}</button>
                   <button onClick={() => { onLogout(); }} style={{ width:"100%", padding:"10px 14px", border:"none", borderTop:`1px solid ${C.border}`, background:"transparent", textAlign:"left", fontSize:13, color:C.danger, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=`${C.danger}08`} onMouseOut={e=>e.currentTarget.style.background="transparent"}>🚪 登出</button>
                 </div>
@@ -747,52 +785,6 @@ function Front({ currentUser, onLogout, setView }) {
           </div>
         </div>
       </div>
-
-      {page==="home" && (
-        <div>
-          <div style={{ background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, padding:"36px 24px", color:"#FFF", position:"relative", overflow:"hidden" }}>
-            <div style={{ position:"absolute", right:-30, top:-30, width:180, height:180, borderRadius:"50%", background:`${C.gold}12` }} />
-            <h1 style={{ fontSize:22, fontWeight:700, margin:0, position:"relative" }}>歡迎回來，{currentUser.name} 👋</h1>
-            <p style={{ fontSize:13, opacity:0.7, marginTop:6, position:"relative" }}>持續學習，提升專業技能</p>
-            <div style={{ display:"flex", gap:10, marginTop:18, position:"relative", flexWrap:"wrap" }}>
-              {[{l:"已完成",v:userHistory.filter(h=>h.progress>=100).length},{l:"進行中",v:inProgress.length},{l:"學習時數",v:`${userHistory.reduce((s,h)=>s+(h.totalTime||0),0)}分`}].map(s => (
-                <div key={s.l} style={{ padding:"8px 14px", borderRadius:8, background:"rgba(255,255,255,0.1)" }}>
-                  <span style={{ fontSize:11, opacity:0.6 }}>{s.l}</span>
-                  <span style={{ display:"block", fontSize:18, fontWeight:700 }}>{s.v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{ padding:"24px 20px" }}>
-            {inProgress.length > 0 && <div style={{ marginBottom:28 }}>
-              <h2 style={{ fontSize:16, fontWeight:700, color:C.text, marginBottom:12 }}>▶ 繼續觀看</h2>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px,1fr))", gap:10 }}>
-                {inProgress.map(h => (
-                  <div key={h.courseId} onClick={() => { setSelectedCourse(h.course); setPage("course"); }} style={{ background:"#FFF", borderRadius:9, padding:12, cursor:"pointer", border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
-                    <span style={{ fontSize:24 }}>{h.course.thumbnail}</span>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ margin:0, fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{h.course.title}</p>
-                      <div style={{ marginTop:5, height:3, borderRadius:2, background:C.border }}><div style={{ height:"100%", borderRadius:2, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${h.progress}%` }} /></div>
-                      <p style={{ margin:"3px 0 0", fontSize:10, color:C.textLight }}>{h.progress}%</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>}
-            <div style={{ marginBottom:28 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-                <h2 style={{ fontSize:16, fontWeight:700, color:C.text, margin:0 }}>🆕 最新上架</h2>
-                <button onClick={() => setPage("courses")} style={{ border:"none", background:"none", color:C.navy, fontSize:12, cursor:"pointer", fontWeight:500 }}>查看全部 →</button>
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px,1fr))", gap:18 }}>{newest.map(c => <Card key={c.id} course={c} />)}</div>
-            </div>
-            <div>
-              <h2 style={{ fontSize:16, fontWeight:700, color:C.text, marginBottom:12 }}>🔥 最熱門課程</h2>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px,1fr))", gap:18 }}>{popular.map(c => <Card key={c.id} course={c} />)}</div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {page==="courses" && (
         <div style={{ padding:"24px 20px", maxWidth:1200, margin:"0 auto" }}>
@@ -820,97 +812,144 @@ function Front({ currentUser, onLogout, setView }) {
       )}
 
       {page==="profile" && (
-        <div style={{ padding:"24px 20px" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18, flexWrap:"wrap", gap:10 }}>
-            <h2 style={{ fontSize:18, fontWeight:700, color:C.text, margin:0 }}>我的學習</h2>
-            <Btn onClick={() => setShowPwModal(true)} variant="outline" style={{ fontSize:12 }}>🔒 修改密碼</Btn>
-          </div>
-
-          <div style={{ background:"#FFF", borderRadius:10, padding:16, border:`1px solid ${C.border}`, marginBottom:16, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
-            <div style={{ width:54, height:54, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:22, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
-            <div style={{ flex:1, minWidth:200 }}>
-              <p style={{ margin:0, fontSize:15, fontWeight:600, color:C.text }}>{currentUser.name}</p>
-              <p style={{ margin:"2px 0 0", fontSize:12, color:C.textLight }}>{currentUser.empNo} · {currentUser.department} · {currentUser.email}</p>
+        <div>
+          {/* 歡迎橫幅（金色系，呼應 LOGO）*/}
+          <div style={{ background:`linear-gradient(135deg, ${C.navy} 0%, ${C.navyLight} 60%, ${C.gold} 160%)`, padding:"32px 24px", color:"#FFF", position:"relative", overflow:"hidden" }}>
+            <div style={{ position:"absolute", right:-40, top:-40, width:200, height:200, borderRadius:"50%", background:"rgba(255,255,255,0.08)" }} />
+            <div style={{ position:"absolute", right:60, bottom:-50, width:120, height:120, borderRadius:"50%", background:`${C.gold}25` }} />
+            <div style={{ maxWidth:1100, margin:"0 auto", position:"relative" }}>
+              <h1 style={{ fontSize:24, fontWeight:700, margin:0 }}>歡迎回來，{currentUser.name} 👋</h1>
+              <p style={{ fontSize:13, opacity:0.85, marginTop:6 }}>持續學習，提升專業技能</p>
+              <div style={{ display:"flex", gap:12, marginTop:20, flexWrap:"wrap" }}>
+                {[
+                  {l:"已完成",v:userHistory.filter(h=>h.progress>=100).length},
+                  {l:"進行中",v:inProgress.length},
+                  {l:"學習時數",v:`${userHistory.reduce((s,h)=>s+(h.totalTime||0),0)} 分`},
+                  {l:"我的收藏",v:favorites.length},
+                ].map(s => (
+                  <div key={s.l} style={{ padding:"10px 18px", borderRadius:10, background:"rgba(255,255,255,0.15)", backdropFilter:"blur(4px)", minWidth:70 }}>
+                    <span style={{ fontSize:11, opacity:0.8 }}>{s.l}</span>
+                    <span style={{ display:"block", fontSize:22, fontWeight:700, marginTop:2 }}>{s.v}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(160px,1fr))", gap:12, marginBottom:24 }}>
-            {[{l:"觀看課程",v:userHistory.length,i:"📚"},{l:"學習時數",v:`${userHistory.reduce((s,h)=>s+(h.totalTime||0),0)} 分`,i:"⏱️"},{l:"測驗完成",v:userQuizzes.length,i:"📝"}].map(s => (
-              <div key={s.l} style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ fontSize:24 }}>{s.i}</span>
-                <div><p style={{ margin:0, fontSize:11, color:C.textLight }}>{s.l}</p><p style={{ margin:"3px 0 0", fontSize:18, fontWeight:700, color:C.text }}>{s.v}</p></div>
-              </div>
-            ))}
-          </div>
-          {/* 瀏覽紀錄 + 測驗紀錄：左右兩欄，可摺疊 */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(320px,1fr))", gap:14 }}>
-            <CollapsiblePanel
-              title="瀏覽紀錄"
-              icon="📚"
-              count={userHistory.length}
-              emptyText="尚無觀看紀錄"
-            >
-              {[...userHistory]
-                .sort((a,b) => {
-                  const ta = a.lastWatched?.toMillis ? a.lastWatched.toMillis() : 0;
-                  const tb = b.lastWatched?.toMillis ? b.lastWatched.toMillis() : 0;
-                  return tb - ta;
-                })
-                .map(h => {
-                  const c = courses.find(cc => cc.id===h.courseId);
-                  if (!c) return null;
-                  const dateStr = h.lastWatched?.toDate ? h.lastWatched.toDate().toLocaleDateString("zh-TW") : "";
-                  return (
-                    <div key={h.courseId} onClick={() => { setSelectedCourse(c); setPage("course"); }} style={{ background:"#FFF", borderRadius:7, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, cursor:"pointer", marginBottom:6 }}>
-                      <span style={{ fontSize:22 }}>{c.thumbnail}</span>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ margin:0, fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.title}</p>
-                        <p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>學習 {h.totalTime||0} 分 · 進度 {h.progress||0}% {dateStr && `· ${dateStr}`}</p>
-                      </div>
-                      <span style={{ fontSize:11, color:h.progress>=100?C.success:C.navy, fontWeight:500, flexShrink:0 }}>{h.progress>=100?"✅":"▶"}</span>
-                    </div>
-                  );
-                })}
-            </CollapsiblePanel>
+          <div style={{ padding:"24px 20px", maxWidth:1100, margin:"0 auto" }}>
+            {/* 分頁籤 */}
+            <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
+              {[
+                { id:"progress", label:"進行中", count:inProgress.length },
+                { id:"done", label:"已完成", count:userHistory.filter(h=>h.progress>=100).length },
+                { id:"fav", label:"我的收藏", count:favorites.length },
+                { id:"quiz", label:"測驗紀錄", count:userQuizzes.length },
+              ].map(t => (
+                <button key={t.id} onClick={() => setLearnTab(t.id)} style={{ padding:"10px 18px", border:"none", background:"transparent", borderBottom:`3px solid ${learnTab===t.id?C.gold:"transparent"}`, color:learnTab===t.id?C.navy:C.textLight, fontSize:14, fontWeight:learnTab===t.id?700:500, cursor:"pointer", marginBottom:-1, display:"flex", alignItems:"center", gap:6 }}>
+                  {t.label}
+                  {t.count > 0 && <span style={{ fontSize:11, minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:learnTab===t.id?C.gold:C.bgSoft, color:learnTab===t.id?"#FFF":C.textLight, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:600 }}>{t.count}</span>}
+                </button>
+              ))}
+            </div>
 
-            <CollapsiblePanel
-              title="測驗紀錄"
-              icon="📝"
-              count={userQuizzes.length}
-              emptyText="尚無測驗紀錄"
-            >
-              {[...userQuizzes]
-                .sort((a,b) => {
-                  const ta = a.date?.toMillis ? a.date.toMillis() : 0;
-                  const tb = b.date?.toMillis ? b.date.toMillis() : 0;
-                  return tb - ta;
-                })
-                .map((q, i) => {
-                  const c = courses.find(cc => cc.id===q.courseId);
-                  const pct = Math.round(q.score/q.total*100);
-                  const dateStr = q.date?.toDate ? q.date.toDate().toLocaleDateString("zh-TW") : "";
-                  // 準備傳給 Modal 的物件
-                  const recordForModal = {
-                    ...q,
-                    userName: currentUser.name,
-                    empNo: currentUser.empNo,
-                    courseName: c?.title || "未知",
-                    pct,
-                    dateObj: q.date?.toDate ? q.date.toDate() : null,
-                  };
-                  return (
-                    <div key={i} style={{ background:"#FFF", borderRadius:7, padding:10, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
-                      <span style={{ fontSize:20 }}>{pct>=60?"🎉":"📖"}</span>
+            {/* === 進行中 === */}
+            {learnTab==="progress" && (
+              inProgress.length === 0 ? (
+                <EmptyState icon="📖" title="目前沒有進行中的課程" hint="去探索課程開始學習吧！" actionLabel="探索課程 →" onAction={() => setPage("courses")} />
+              ) : (
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px,1fr))", gap:14 }}>
+                  {inProgress.map(h => (
+                    <div key={h.courseId} onClick={() => { setSelectedCourse(h.course); setPage("course"); }} style={{ background:"#FFF", borderRadius:10, padding:14, cursor:"pointer", border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:12 }}
+                      onMouseOver={e => e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.08)"}
+                      onMouseOut={e => e.currentTarget.style.boxShadow="none"}>
+                      <span style={{ fontSize:28 }}>{h.course.contentType==="article"?"📄":"📘"}</span>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ margin:0, fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c?.title||"未知"}</p>
-                        <p style={{ margin:"2px 0 0", fontSize:10, color:C.textLight }}>{q.score}/{q.total}（{pct}%）{dateStr && ` · ${dateStr}`}</p>
+                        <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{h.course.title}</p>
+                        <div style={{ marginTop:6, height:5, borderRadius:3, background:C.border }}><div style={{ height:"100%", borderRadius:3, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${h.progress}%` }} /></div>
+                        <p style={{ margin:"4px 0 0", fontSize:11, color:C.textLight }}>{h.progress}% 完成</p>
                       </div>
-                      <button onClick={() => setQuizDetailRecord(recordForModal)} style={{ padding:"3px 8px", fontSize:10, border:`1px solid ${C.border}`, background:"#FFF", borderRadius:5, cursor:"pointer", color:C.navy, flexShrink:0 }}>🔍 詳解</button>
-                      <span style={{ fontSize:11, padding:"2px 7px", borderRadius:5, background:pct>=60?`${C.success}12`:`${C.danger}12`, color:pct>=60?C.success:C.danger, fontWeight:500, flexShrink:0 }}>{pct>=60?"通過":"未通過"}</span>
                     </div>
-                  );
-                })}
-            </CollapsiblePanel>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* === 已完成 === */}
+            {learnTab==="done" && (() => {
+              const doneList = userHistory.filter(h => h.progress >= 100);
+              return doneList.length === 0 ? (
+                <EmptyState icon="🎓" title="還沒有完成的課程" hint="完成課程後會出現在這裡" />
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {doneList.map(h => {
+                    const c = courses.find(cc => cc.id===h.courseId);
+                    if (!c) return null;
+                    const dateStr = h.lastWatched?.toDate ? h.lastWatched.toDate().toLocaleDateString("zh-TW") : "";
+                    return (
+                      <div key={h.courseId} onClick={() => { setSelectedCourse(c); setPage("course"); }} style={{ background:"#FFF", borderRadius:9, padding:12, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
+                        <span style={{ fontSize:24 }}>{c.contentType==="article"?"📄":"📘"}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>{c.title}</p>
+                          <p style={{ margin:"2px 0 0", fontSize:11, color:C.textLight }}>完成於 {dateStr || "—"}</p>
+                        </div>
+                        <span style={{ fontSize:12, color:C.success, fontWeight:600, flexShrink:0 }}>✅ 已完成</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* === 我的收藏 === */}
+            {learnTab==="fav" && (
+              favorites.length === 0 ? (
+                <EmptyState icon="🤍" title="還沒有收藏任何課程" hint="在課程卡片右上角點愛心即可收藏" actionLabel="探索課程 →" onAction={() => setPage("courses")} />
+              ) : (
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(240px,1fr))", gap:18 }}>
+                  {courses.filter(c => favorites.includes(c.id)).map(c => <Card key={c.id} course={c} />)}
+                </div>
+              )
+            )}
+
+            {/* === 測驗紀錄 === */}
+            {learnTab==="quiz" && (
+              userQuizzes.length === 0 ? (
+                <EmptyState icon="📝" title="還沒有測驗紀錄" hint="完成課程測驗後會出現在這裡" />
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {[...userQuizzes]
+                    .sort((a,b) => {
+                      const ta = a.date?.toMillis ? a.date.toMillis() : 0;
+                      const tb = b.date?.toMillis ? b.date.toMillis() : 0;
+                      return tb - ta;
+                    })
+                    .map((q, i) => {
+                      const c = courses.find(cc => cc.id===q.courseId);
+                      const pct = Math.round(q.score/q.total*100);
+                      const dateStr = q.date?.toDate ? q.date.toDate().toLocaleDateString("zh-TW") : "";
+                      const recordForModal = {
+                        ...q,
+                        userName: currentUser.name,
+                        empNo: currentUser.empNo,
+                        courseName: c?.title || "未知",
+                        pct,
+                        dateObj: q.date?.toDate ? q.date.toDate() : null,
+                      };
+                      return (
+                        <div key={i} style={{ background:"#FFF", borderRadius:9, padding:12, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:12 }}>
+                          <span style={{ fontSize:22 }}>{pct>=60?"🎉":"📖"}</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c?.title||"未知"}</p>
+                            <p style={{ margin:"2px 0 0", fontSize:11, color:C.textLight }}>{q.score}/{q.total}（{pct}%）{dateStr && ` · ${dateStr}`}</p>
+                          </div>
+                          <button onClick={() => setQuizDetailRecord(recordForModal)} style={{ padding:"4px 10px", fontSize:11, border:`1px solid ${C.border}`, background:"#FFF", borderRadius:6, cursor:"pointer", color:C.navy, flexShrink:0 }}>🔍 詳解</button>
+                          <span style={{ fontSize:12, padding:"3px 9px", borderRadius:6, background:pct>=60?`${C.success}12`:`${C.danger}12`, color:pct>=60?C.success:C.danger, fontWeight:600, flexShrink:0 }}>{pct>=60?"通過":"未通過"}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              )
+            )}
           </div>
         </div>
       )}
@@ -918,10 +957,51 @@ function Front({ currentUser, onLogout, setView }) {
       {/* 學員自己的測驗詳解彈窗 */}
       {quizDetailRecord && <QuizDetailModal record={quizDetailRecord} courses={courses} onClose={() => setQuizDetailRecord(null)} />}
 
-      {page==="course" && selectedCourse && <CoursePage {...{categories:sortedCategories,course:selectedCourse,goBack:()=>{setSelectedCourse(null);setPage("home");},watchHistory,currentUser,recordWatch:handleRecordWatch,saveQuiz:handleSaveQuiz}} />}
+      {page==="course" && selectedCourse && <CoursePage {...{categories:sortedCategories,course:selectedCourse,goBack:()=>{setSelectedCourse(null);setPage("courses");},watchHistory,currentUser,recordWatch:handleRecordWatch,saveQuiz:handleSaveQuiz}} />}
 
       {page==="inbox" && (
         <InboxPage myQuestions={myQuestions} courses={courses} currentUser={currentUser} onOpenCourse={(c) => { setSelectedCourse(c); setPage("course"); }} />
+      )}
+
+      {/* 帳號設定 */}
+      {page==="settings" && (
+        <div style={{ padding:"24px 20px", maxWidth:680, margin:"0 auto" }}>
+          <h2 style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:18 }}>⚙️ 帳號設定</h2>
+
+          {/* 個人資料卡 */}
+          <div style={{ background:"#FFF", borderRadius:12, padding:20, border:`1px solid ${C.border}`, marginBottom:16 }}>
+            <h3 style={{ fontSize:14, fontWeight:700, color:C.text, margin:"0 0 14px" }}>個人資料</h3>
+            <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:16 }}>
+              <div style={{ width:56, height:56, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:24, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
+              <div>
+                <p style={{ margin:0, fontSize:16, fontWeight:600, color:C.text }}>{currentUser.name}</p>
+                <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="admin" ? "管理員" : "一般使用者"}</p>
+              </div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))", gap:12 }}>
+              {[
+                {l:"員工編號", v:currentUser.empNo},
+                {l:"處別", v:currentUser.department || "—"},
+                {l:"電子信箱", v:currentUser.email || "—"},
+              ].map(f => (
+                <div key={f.l} style={{ padding:"10px 12px", background:C.bg, borderRadius:8 }}>
+                  <p style={{ margin:0, fontSize:11, color:C.textLight }}>{f.l}</p>
+                  <p style={{ margin:"3px 0 0", fontSize:13, color:C.text, fontWeight:500 }}>{f.v}</p>
+                </div>
+              ))}
+            </div>
+            <p style={{ fontSize:11, color:C.textLight, margin:"12px 0 0", lineHeight:1.6 }}>
+              💡 個人資料由管理員統一維護，如需修改請聯絡管理處。
+            </p>
+          </div>
+
+          {/* 安全設定卡 */}
+          <div style={{ background:"#FFF", borderRadius:12, padding:20, border:`1px solid ${C.border}` }}>
+            <h3 style={{ fontSize:14, fontWeight:700, color:C.text, margin:"0 0 6px" }}>安全設定</h3>
+            <p style={{ fontSize:12, color:C.textLight, margin:"0 0 14px" }}>定期更換密碼能提升帳號安全</p>
+            <Btn onClick={() => setShowPwModal(true)} variant="outline">🔒 修改密碼</Btn>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1213,11 +1293,26 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
       // 進度依據累計觀看時間動態計算
       const newProgress = calculateProgress(totalTime + 1, course.duration);
       recordWatch(course.id, activeCh, newProgress);
-    } else if (isArticle) {
-      // 文章型課程：開啟即記錄為已閱讀（進度 100%）
-      recordWatch(course.id, 0, 100);
     }
-  }, [activeCh, videoInfo?.embedUrl, isArticle]);
+  }, [activeCh, videoInfo?.embedUrl]);
+
+  // 文章型課程：捲動到接近底部 → 視為閱讀完成（記 100%）
+  useEffect(() => {
+    if (!isArticle) return;
+    if (progress >= 100) return;  // 已完成就不用再監聽
+    const onScroll = () => {
+      const scrollBottom = window.innerHeight + window.scrollY;
+      const docHeight = document.documentElement.scrollHeight;
+      // 捲到距離底部 120px 內，視為讀完
+      if (scrollBottom >= docHeight - 120) {
+        recordWatch(course.id, 0, 100);
+      }
+    };
+    window.addEventListener("scroll", onScroll);
+    // 內容很短不需捲動時，也檢查一次
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [isArticle, progress, course.id]);
 
   if (showQuiz) return <Quiz course={course} goBack={() => setShowQuiz(false)} saveQuiz={saveQuiz} />;
 
@@ -1343,12 +1438,9 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
             <p style={{ margin:0, fontSize:12, fontWeight:600 }}>學習進度</p>
             <div style={{ marginTop:7, height:5, borderRadius:3, background:C.border }}><div style={{ height:"100%", borderRadius:3, background:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${progress}%`, transition:"width 0.5s" }} /></div>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:5 }}>
-              <span style={{ fontSize:10, color:C.textLight }}>觀看 {totalTime}/{course.duration||0} 分</span>
+              <span style={{ fontSize:10, color:C.textLight }}>{isArticle ? (progress>=100 ? "已閱讀完成" : "閱讀中") : `觀看 ${totalTime}/${course.duration||0} 分`}</span>
               <span style={{ fontSize:11, color: progress>=100?C.success:C.textMid, fontWeight:600 }}>{progress}%</span>
             </div>
-            <p style={{ margin:"6px 0 0", fontSize:9, color:C.textLight, lineHeight:1.4 }}>
-              💡 觀看時數達課程時長 80% 即視為完成
-            </p>
           </div>
           {!isArticle && (
           <div style={{ background:"#FFF", borderRadius:9, padding:14, border:`1px solid ${C.border}`, marginBottom:10 }}>
@@ -1390,14 +1482,14 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
               ⭐ {myReview ? "查看 / 修改我的評價" : "我要評價"}
             </button>
           </div>
-          {/* 我想問問題 */}
+          {/* Q&A 提問 */}
           <button
             onClick={() => setShowAskModal(true)}
             style={{ width:"100%", marginTop:10, padding:"12px", borderRadius:9, border:"none", background:`linear-gradient(135deg, #FF8C42, #FFA62B)`, color:"#FFF", fontSize:14, fontWeight:700, cursor:"pointer", boxShadow:"0 2px 8px rgba(255,140,66,0.3)", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}
             onMouseOver={e => { e.currentTarget.style.transform="translateY(-1px)"; e.currentTarget.style.boxShadow="0 4px 12px rgba(255,140,66,0.4)"; }}
             onMouseOut={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="0 2px 8px rgba(255,140,66,0.3)"; }}
           >
-            🙋 我想問問題
+            ✋ Q&A 提問
           </button>
           {sharedQuestions.length > 0 && (
             <button onClick={() => { const el = document.getElementById("forum-section"); el?.scrollIntoView({ behavior:"smooth" }); }} style={{ width:"100%", marginTop:8, padding:"7px", borderRadius:7, border:`1px solid ${C.border}`, background:"#FFF", color:C.textMid, fontSize:12, fontWeight:600, cursor:"pointer" }}>
@@ -1543,7 +1635,7 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
         <div onClick={() => setShowAskModal(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#FFF", borderRadius:14, width:"100%", maxWidth:480, maxHeight:"90vh", overflow:"auto", boxShadow:"0 24px 48px rgba(0,0,0,0.3)" }}>
             <div style={{ padding:"18px 20px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(135deg, #FF8C42, #FFA62B)` }}>
-              <h3 style={{ fontSize:17, fontWeight:700, color:"#FFF", margin:0, display:"flex", alignItems:"center", gap:8 }}>🙋 我想問問題</h3>
+              <h3 style={{ fontSize:17, fontWeight:700, color:"#FFF", margin:0, display:"flex", alignItems:"center", gap:8 }}>✋ Q&A 提問</h3>
               <p style={{ fontSize:12, color:"rgba(255,255,255,0.9)", margin:"4px 0 0" }}>《{course.title}》</p>
             </div>
             <div style={{ padding:"20px" }}>
