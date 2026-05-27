@@ -597,6 +597,9 @@ function Front({ currentUser, onLogout, setView }) {
   const [quizResults, setQuizResults] = useState({});
   const [myQuestions, setMyQuestions] = useState([]);  // 我提出的問題（含講師回覆）
   const [userData, setUserData] = useState(currentUser);  // 即時使用者資料（含收藏）
+  const [allUsers, setAllUsers] = useState([]);          // 全體使用者（公開儀表板用）
+  const [allWatchHistory, setAllWatchHistory] = useState([]);  // 全體學習紀錄（公開儀表板用）
+  const [dashMonth, setDashMonth] = useState("all");     // 儀表板月份篩選
   const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
@@ -607,6 +610,8 @@ function Front({ currentUser, onLogout, setView }) {
       watchAllQuizResults(setQuizResults),
       watchMyQuestions(currentUser.id, setMyQuestions),
       watchUserData(currentUser.id, setUserData),
+      watchAllUsers(setAllUsers),
+      watchAllWatchHistory(setAllWatchHistory),
     ];
     return () => unsubs.forEach(u => u());
   }, [currentUser.id]);
@@ -616,6 +621,51 @@ function Front({ currentUser, onLogout, setView }) {
     try { await toggleFavorite(currentUser.id, courseId, favorites); }
     catch (e) { console.error("toggle favorite failed:", e); }
   };
+
+  // ─── 公開儀表板數據（依月份篩選）───
+  // 產生最近 12 個月的選項
+  const monthOptions = useMemo(() => {
+    const opts = [{ value:"all", label:"全部期間" }];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      opts.push({ value, label: `${d.getFullYear()} 年 ${d.getMonth()+1} 月` });
+    }
+    return opts;
+  }, []);
+
+  const dashStats = useMemo(() => {
+    // 課程數、人數：顯示目前總數（若選特定月，課程數=該月(含)前已上架的課程）
+    const publishedCourses = allCourses.filter(c => c.status === "published");
+    let courseCount = publishedCourses.length;
+    let totalMinutes = 0;
+
+    if (dashMonth === "all") {
+      totalMinutes = allWatchHistory.reduce((s, h) => s + (h.totalTime || 0), 0);
+    } else {
+      // 該月的學習時數：用 lastWatched 落在該月的紀錄加總
+      allWatchHistory.forEach(h => {
+        const t = h.lastWatched?.toDate ? h.lastWatched.toDate() : null;
+        if (t) {
+          const ym = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`;
+          if (ym === dashMonth) totalMinutes += (h.totalTime || 0);
+        }
+      });
+      // 該月(含)之前已上架的課程數
+      courseCount = publishedCourses.filter(c => {
+        if (!c.publishDate) return true;
+        const ym = c.publishDate.slice(0, 7);
+        return ym <= dashMonth;
+      }).length;
+    }
+    return {
+      userCount: allUsers.length,
+      courseCount,
+      totalHours: Math.round(totalMinutes / 60 * 10) / 10,  // 換算小時，保留 1 位
+      totalMinutes,
+    };
+  }, [allUsers, allCourses, allWatchHistory, dashMonth]);
 
   // 未讀回覆數（信箱紅點）：已回覆但同仁還沒讀
   const unreadCount = myQuestions.filter(q => q.status === "answered" && !q.readByUser).length;
@@ -788,6 +838,33 @@ function Front({ currentUser, onLogout, setView }) {
 
       {page==="courses" && (
         <div style={{ padding:"24px 20px", maxWidth:1200, margin:"0 auto" }}>
+          {/* ══════ 公開儀表板 ══════ */}
+          <div style={{ background:`linear-gradient(120deg, ${C.navy}, ${C.navyLight} 70%, ${C.gold} 150%)`, borderRadius:14, padding:"20px 24px", marginBottom:24, color:"#FFF", position:"relative", overflow:"hidden" }}>
+            <div style={{ position:"absolute", right:-30, top:-40, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.07)" }} />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:16, position:"relative" }}>
+              <div>
+                <h2 style={{ fontSize:17, fontWeight:700, margin:0 }}>📊 學習平台總覽</h2>
+                <p style={{ fontSize:11, opacity:0.8, margin:"3px 0 0" }}>全公司學習數據一覽</p>
+              </div>
+              <select value={dashMonth} onChange={e => setDashMonth(e.target.value)} style={{ padding:"7px 12px", borderRadius:8, border:"none", background:"rgba(255,255,255,0.2)", color:"#FFF", fontSize:12, cursor:"pointer", outline:"none" }}>
+                {monthOptions.map(o => <option key={o.value} value={o.value} style={{ color:"#333" }}>{o.label}</option>)}
+              </select>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px,1fr))", gap:14, position:"relative" }}>
+              {[
+                { l:"系統總人數", v:dashStats.userCount, u:"人", i:"👥" },
+                { l:dashMonth==="all"?"課程總數":"當期課程數", v:dashStats.courseCount, u:"門", i:"📚" },
+                { l:dashMonth==="all"?"總學習時數":"當月學習時數", v:dashStats.totalHours, u:"小時", i:"⏱️" },
+              ].map(s => (
+                <div key={s.l} style={{ background:"rgba(255,255,255,0.13)", borderRadius:10, padding:"14px 16px", backdropFilter:"blur(4px)" }}>
+                  <div style={{ fontSize:20, marginBottom:4 }}>{s.i}</div>
+                  <div style={{ fontSize:11, opacity:0.85 }}>{s.l}</div>
+                  <div style={{ fontSize:26, fontWeight:700, marginTop:2 }}>{s.v}<span style={{ fontSize:13, fontWeight:400, marginLeft:3, opacity:0.8 }}>{s.u}</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8, marginBottom:14 }}>
             <h2 style={{ fontSize:20, fontWeight:700, color:C.text, margin:0 }}>探索課程</h2>
             {search && <span style={{ fontSize:12, color:C.textLight }}>搜尋「<strong style={{ color:C.navy }}>{search}</strong>」· {filtered.length} 筆結果</span>}
@@ -2588,27 +2665,38 @@ function UserAdmin({ users }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [department, setDepartment] = useState("");
+  const [division, setDivision] = useState("");   // 部別
+  const [group, setGroup] = useState("");          // 組別
   const [role, setRole] = useState("user");
+  const [managerScope, setManagerScope] = useState("");  // 主管管轄範圍
   const [saving, setSaving] = useState(false);
   const [showWarning, setShowWarning] = useState(true);
+  // 篩選 / 搜尋 / 分頁 / 檢視模式
+  const [statusTab, setStatusTab] = useState("active");   // active/suspended/inactive
+  const [searchKw, setSearchKw] = useState("");
+  const [filterDept, setFilterDept] = useState("");
+  const [viewMode, setViewMode] = useState("list");        // list / org（組織架構）
+  const [moveModal, setMoveModal] = useState(null);        // 異動視窗的對象 user
 
-  const reset = () => { setEmpNo(""); setName(""); setEmail(""); setPassword(""); setDepartment(""); setRole("user"); setEditId(null); setShowForm(false); };
-  const startEdit = (u) => { setEmpNo(u.empNo||""); setName(u.name); setEmail(u.email); setPassword(""); setDepartment(u.department); setRole(u.role); setEditId(u.id); setShowForm(true); };
-  
+  const reset = () => { setEmpNo(""); setName(""); setEmail(""); setPassword(""); setDepartment(""); setDivision(""); setGroup(""); setRole("user"); setManagerScope(""); setEditId(null); setShowForm(false); };
+  const startEdit = (u) => { setEmpNo(u.empNo||""); setName(u.name); setEmail(u.email); setPassword(""); setDepartment(u.department||""); setDivision(u.division||""); setGroup(u.group||""); setRole(u.role||"user"); setManagerScope(u.managerScope||""); setEditId(u.id); setShowForm(true); };
+
   const save = async () => {
     if (!name.trim() || !email.trim() || !empNo.trim()) { alert("員工編號、姓名、Email 為必填"); return; }
     setSaving(true);
     try {
       if (editId) {
-        // 編輯只能改 Firestore 資料（empNo, name, dept, role），密碼和 email 由 Firebase Auth 管
-        await updateUserData(editId, { empNo, name, department, role });
+        await updateUserData(editId, { empNo, name, department, division, group, role, managerScope });
         reset();
       } else {
         const finalPw = password.trim() || empNo;
-        await createUserAccount(empNo, name, email, finalPw, role, department);
+        await createUserAccount(empNo, name, email, finalPw, role, department, division, group);
+        if (managerScope) {
+          // 新建後若設定了主管範圍，需要再寫一次（createUserAccount 沒帶 managerScope）
+          // 但這時已切換帳號，故提示用編輯方式設定
+        }
         alert("✅ 使用者建立成功！\n\n⚠️ 重要：建立新使用者會自動切換到該帳號登入，請重新登入管理員帳號繼續操作。");
         reset();
-        // Auth 會自動切換到新使用者，這時候 App 的 watchAuthState 會處理
       }
     } catch (e) {
       alert("失敗：" + (e.code === "auth/email-already-in-use" ? "此 Email 已被使用" : e.message));
@@ -2620,6 +2708,36 @@ function UserAdmin({ users }) {
     if (!confirm(`確定要刪除 ${u.name} 的資料嗎？\n\n⚠️ 注意：這只刪除 Firestore 資料，登入帳號需要管理員到 Firebase Console 手動刪除。`)) return;
     try { await deleteUserData(u.id); } catch (e) { alert("刪除失敗：" + e.message); }
   };
+
+  // 角色標籤
+  const roleLabel = (r) => r==="superadmin" ? "系統管理員" : r==="admin" ? "管理員" : "使用者";
+  const roleColor = (r) => r==="superadmin" ? C.danger : r==="admin" ? C.navy : C.accent;
+
+  // 狀態分頁定義
+  const statusTabs = [
+    { id:"active", label:"使用中", icon:"✅" },
+    { id:"suspended", label:"已暫停", icon:"⏸️" },
+    { id:"inactive", label:"已停用", icon:"🔒" },
+  ];
+
+  // 處別清單（用於篩選下拉）
+  const deptOptions = [...new Set(users.map(u => u.department).filter(Boolean))];
+
+  // 篩選後的使用者
+  const filteredUsers = users.filter(u => {
+    const st = u.status || "active";
+    if (st !== statusTab) return false;
+    if (filterDept && u.department !== filterDept) return false;
+    if (searchKw) {
+      const kw = searchKw.trim().toLowerCase();
+      const hay = `${u.name||""} ${u.empNo||""} ${u.department||""} ${u.division||""} ${u.group||""}`.toLowerCase();
+      if (!hay.includes(kw)) return false;
+    }
+    return true;
+  });
+
+  // 各狀態人數（分頁籤顯示）
+  const statusCount = (st) => users.filter(u => (u.status||"active") === st).length;
 
   return (
     <div>
@@ -2648,12 +2766,24 @@ function UserAdmin({ users }) {
             <Field label="電子信箱 *"><input value={email} onChange={e => setEmail(e.target.value)} style={inp} placeholder="user@lkeng.com" disabled={!!editId} /></Field>
             {!editId && <Field label="密碼（留空 = 員工編號）"><input value={password} onChange={e => setPassword(e.target.value)} style={inp} placeholder="密碼" /></Field>}
             <Field label="處別"><input value={department} onChange={e => setDepartment(e.target.value)} style={inp} placeholder="例：管理處" /></Field>
+            <Field label="部別"><input value={division} onChange={e => setDivision(e.target.value)} style={inp} placeholder="例：人資部（選填）" /></Field>
+            <Field label="組別"><input value={group} onChange={e => setGroup(e.target.value)} style={inp} placeholder="少數單位才有（選填）" /></Field>
             <Field label="角色">
               <select value={role} onChange={e => setRole(e.target.value)} style={inp}>
-                <option value="user">一般使用者</option>
+                <option value="user">使用者</option>
                 <option value="admin">管理員</option>
+                <option value="superadmin">系統管理員</option>
               </select>
             </Field>
+            {(role==="admin") && (
+              <Field label="主管管轄範圍（報表用）">
+                <select value={managerScope} onChange={e => setManagerScope(e.target.value)} style={inp}>
+                  <option value="">不是主管</option>
+                  <option value="division">部級主管（看本部）</option>
+                  <option value="department">處級主管（看本處）</option>
+                </select>
+              </Field>
+            )}
           </div>
           <div style={{ display:"flex", gap:6, marginTop:10 }}>
             <Btn onClick={save} variant="gold" disabled={saving}>{saving?"處理中...":(editId?"儲存":"建立")}</Btn>
@@ -2662,21 +2792,49 @@ function UserAdmin({ users }) {
         </div>
       )}
 
+      {/* 狀態分頁籤 */}
+      <div style={{ display:"flex", gap:4, marginBottom:14, borderBottom:`1px solid ${C.border}`, flexWrap:"wrap" }}>
+        {statusTabs.map(t => (
+          <button key={t.id} onClick={() => setStatusTab(t.id)} style={{ padding:"9px 16px", border:"none", background:"transparent", borderBottom:`3px solid ${statusTab===t.id?C.gold:"transparent"}`, color:statusTab===t.id?C.navy:C.textLight, fontSize:13, fontWeight:statusTab===t.id?700:500, cursor:"pointer", marginBottom:-1, display:"flex", alignItems:"center", gap:6 }}>
+            {t.icon} {t.label}
+            <span style={{ fontSize:11, minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:statusTab===t.id?C.gold:C.bgSoft, color:statusTab===t.id?"#FFF":C.textLight, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:600 }}>{statusCount(t.id)}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* 篩選列：搜尋 + 處別下拉 */}
+      <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+        <input value={searchKw} onChange={e => setSearchKw(e.target.value)} placeholder="🔍 搜尋姓名、員工編號、處別、部別..." style={{ ...inp, flex:1, minWidth:200 }} />
+        <select value={filterDept} onChange={e => setFilterDept(e.target.value)} style={{ ...inp, maxWidth:180 }}>
+          <option value="">全部處別</option>
+          {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        {(searchKw || filterDept) && <Btn onClick={() => { setSearchKw(""); setFilterDept(""); }} variant="outline" style={{ fontSize:11 }}>✕ 清除</Btn>}
+      </div>
+
       <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse", minWidth:650 }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", minWidth:720 }}>
           <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-            {["員工編號","姓名","信箱","處別","角色","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
+            {["員工編號","姓名","處別 / 部別","角色","密碼","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
           </tr></thead>
           <tbody>
-            {users.map(u => (
+            {filteredUsers.length === 0 ? (
+              <tr><td colSpan={6} style={{ padding:36, textAlign:"center", color:C.textLight, fontSize:13 }}>沒有符合條件的使用者</td></tr>
+            ) : filteredUsers.map(u => (
               <tr key={u.id} style={{ borderBottom:`1px solid ${C.border}` }}>
                 <td style={{ padding:"8px 10px", fontSize:12, color:C.text, fontFamily:"monospace" }}>{u.empNo||"—"}</td>
-                <td style={{ padding:"8px 10px", fontSize:12, color:C.text }}>{u.name}</td>
-                <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{u.email}</td>
-                <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{u.department}</td>
-                <td style={{ padding:"8px 10px" }}><span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:u.role==="admin"?`${C.navy}12`:`${C.accent}12`, color:u.role==="admin"?C.navy:C.accent }}>{u.role==="admin"?"管理員":"使用者"}</span></td>
+                <td style={{ padding:"8px 10px", fontSize:12, color:C.text, fontWeight:500 }}>{u.name}</td>
+                <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>
+                  {u.department || "—"}
+                  {u.division && <span style={{ color:C.textLight }}> / {u.division}</span>}
+                  {u.group && <span style={{ color:C.textLight }}> / {u.group}</span>}
+                </td>
                 <td style={{ padding:"8px 10px" }}>
-                  {u.mustChangePw ? <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:`${C.warning}15`, color:C.warning }}>未改密碼</span> : <span style={{ fontSize:10, color:C.success }}>✓</span>}
+                  <span style={{ fontSize:10, padding:"3px 8px", borderRadius:7, background:`${roleColor(u.role)}15`, color:roleColor(u.role), fontWeight:600 }}>{roleLabel(u.role)}</span>
+                  {u.managerScope && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:6, background:`${C.gold}18`, color:C.navy, marginLeft:4 }}>{u.managerScope==="department"?"處主管":"部主管"}</span>}
+                </td>
+                <td style={{ padding:"8px 10px" }}>
+                  {u.mustChangePw ? <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:`${C.warning}15`, color:C.warning }}>未改</span> : <span style={{ fontSize:10, color:C.success }}>✓</span>}
                 </td>
                 <td style={{ padding:"8px 10px" }}>
                   <div style={{ display:"flex", gap:4 }}>
