@@ -4,6 +4,7 @@ import {
   loginWithEmail, logoutUser, watchAuthState, changePassword,
   getCurrentUserData, getAllUsers, watchAllUsers, createUserAccount, updateUserData, deleteUserData,
   watchUserData, toggleFavorite,
+  scheduleUserChange, cancelUserChange, applyUserChange, reactivateUser, setUserStatus, checkAndApplyPendingChange,
   watchCourses, addCourse, updateCourse, deleteCourse, incrementViews,
   watchCategories, addCategory, updateCategory, deleteCategory,
   watchUserHistory, recordWatchProgress, watchAllWatchHistory,
@@ -348,8 +349,20 @@ export default function App() {
         try {
           const userData = await getCurrentUserData(user.uid);
           if (userData) {
-            setCurrentUser(userData);
-            setView(userData.role === "admin" ? "admin" : "front");
+            // 檢查是否有到期的異動 / 帳號是否已被鎖
+            const check = await checkAndApplyPendingChange(userData);
+            if (check.blocked) {
+              setError(check.message);
+              await logoutUser();
+              setCurrentUser(null);
+              setAuthLoading(false);
+              return;
+            }
+            // 若剛套用了調部門異動，重新拿最新資料
+            const freshData = check.applied ? await getCurrentUserData(user.uid) : userData;
+            setCurrentUser(freshData);
+            const isAdmin = freshData.role === "admin" || freshData.role === "superadmin";
+            setView(isAdmin ? "admin" : "front");
           } else {
             // Auth 有帳號但 Firestore 沒資料 - 異常狀態
             setError("找不到使用者資料，請聯絡管理員");
@@ -369,7 +382,7 @@ export default function App() {
 
   // 嘗試初始化預設資料（會自動跳過已有資料）
   useEffect(() => {
-    if (currentUser?.role === "admin") {
+    if (currentUser?.role === "admin" || currentUser?.role === "superadmin") {
       initializeDefaultData().catch(err => console.error("Init failed:", err));
     }
   }, [currentUser]);
@@ -809,7 +822,7 @@ function Front({ currentUser, onLogout, setView }) {
         </div>
         {/* 右側：後台 + 信箱 + 頭像 + 登出，靠最右 */}
         <div style={{ display:"flex", alignItems:"center", gap:10, marginLeft:"auto", flexShrink:0 }}>
-          {currentUser.role==="admin" && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
+          {(currentUser.role==="admin" || currentUser.role==="superadmin") && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
           {/* 信箱 icon（站內信通知）*/}
           <button
             onClick={() => setPage("inbox")}
@@ -1071,7 +1084,7 @@ function Front({ currentUser, onLogout, setView }) {
               <div style={{ width:56, height:56, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:24, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
               <div>
                 <p style={{ margin:0, fontSize:16, fontWeight:600, color:C.text }}>{currentUser.name}</p>
-                <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="admin" ? "管理員" : "一般使用者"}</p>
+                <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="superadmin" ? "系統管理員" : currentUser.role==="admin" ? "管理員" : "一般使用者"}</p>
               </div>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))", gap:12 }}>
@@ -2728,6 +2741,13 @@ function UserAdmin({ users }) {
     try { await deleteUserData(u.id); } catch (e) { alert("刪除失敗：" + e.message); }
   };
 
+  // 復職 / 解鎖
+  const handleReactivate = async (u) => {
+    const action = u.status === "suspended" ? "復職" : "重新啟用";
+    if (!confirm(`確定要將 ${u.name} ${action}嗎？\n\n帳號將恢復為「使用中」，該員工可以重新登入。`)) return;
+    try { await reactivateUser(u.id); } catch (e) { alert("操作失敗：" + e.message); }
+  };
+
   // 角色標籤
   const roleLabel = (r) => r==="superadmin" ? "系統管理員" : r==="admin" ? "管理員" : "使用者";
   const roleColor = (r) => r==="superadmin" ? C.danger : r==="admin" ? C.navy : C.accent;
@@ -2847,6 +2867,16 @@ function UserAdmin({ users }) {
                   {u.department || "—"}
                   {u.division && <span style={{ color:C.textLight }}> / {u.division}</span>}
                   {u.group && <span style={{ color:C.textLight }}> / {u.group}</span>}
+                  {/* 待生效異動標記 */}
+                  {u.pendingChange?.effectiveDate && (
+                    <div style={{ fontSize:10, color:C.warning, marginTop:3 }}>
+                      ⏳ {u.pendingChange.effectiveDate} 起{u.pendingChange.type==="transfer"?"調動":u.pendingChange.type==="suspend"?"留停":"離職"}
+                    </div>
+                  )}
+                  {/* 已套用的狀態備註 */}
+                  {u.status !== "active" && u.statusNote && (
+                    <div style={{ fontSize:10, color:C.textLight, marginTop:3 }}>{u.statusNote}</div>
+                  )}
                 </td>
                 <td style={{ padding:"8px 10px" }}>
                   <span style={{ fontSize:10, padding:"3px 8px", borderRadius:7, background:`${roleColor(u.role)}15`, color:roleColor(u.role), fontWeight:600 }}>{roleLabel(u.role)}</span>
@@ -2856,8 +2886,19 @@ function UserAdmin({ users }) {
                   {u.mustChangePw ? <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:`${C.warning}15`, color:C.warning }}>未改</span> : <span style={{ fontSize:10, color:C.success }}>✓</span>}
                 </td>
                 <td style={{ padding:"8px 10px" }}>
-                  <div style={{ display:"flex", gap:4 }}>
-                    <Btn onClick={() => startEdit(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10 }}>編輯</Btn>
+                  <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                    {u.status === "active" && (
+                      <>
+                        <Btn onClick={() => startEdit(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10 }}>編輯</Btn>
+                        <Btn onClick={() => setMoveModal(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10, borderColor:C.warning, color:C.warning }}>異動</Btn>
+                      </>
+                    )}
+                    {u.status === "suspended" && (
+                      <Btn onClick={() => handleReactivate(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10, borderColor:C.success, color:C.success }}>🔓 復職</Btn>
+                    )}
+                    {u.status === "inactive" && (
+                      <Btn onClick={() => handleReactivate(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10, borderColor:C.success, color:C.success }}>🔓 復職</Btn>
+                    )}
                     <Btn onClick={() => remove(u)} variant="danger" style={{ padding:"3px 7px", fontSize:10 }}>刪除</Btn>
                   </div>
                 </td>
@@ -2865,6 +2906,109 @@ function UserAdmin({ users }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ══════ 異動視窗 ══════ */}
+      {moveModal && (
+        <MoveModal user={moveModal} onClose={() => setMoveModal(null)} />
+      )}
+    </div>
+  );
+}
+
+/* ─── 人員異動視窗 ─── */
+function MoveModal({ user, onClose }) {
+  const [type, setType] = useState("transfer");        // transfer / suspend / resign
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
+  const [note, setNote] = useState("");
+  const [newDepartment, setNewDepartment] = useState(user.department || "");
+  const [newDivision, setNewDivision] = useState(user.division || "");
+  const [newGroup, setNewGroup] = useState(user.group || "");
+  const [saving, setSaving] = useState(false);
+
+  const typeInfo = {
+    transfer: { label:"調部門", icon:"🔄", color:C.accent, desc:"調整此人的處別/部別/組別" },
+    suspend:  { label:"留職停薪", icon:"⏸️", color:C.warning, desc:"生效日起帳號暫停，可日後復職" },
+    resign:   { label:"離職", icon:"🔒", color:C.danger, desc:"生效日起帳號停用" },
+  };
+
+  const submit = async (applyNow) => {
+    if (!effectiveDate) { alert("請選擇生效日期"); return; }
+    setSaving(true);
+    const change = { type, effectiveDate, note, newDepartment, newDivision, newGroup };
+    try {
+      if (applyNow) {
+        await applyUserChange(user.id, change);
+      } else {
+        await scheduleUserChange(user.id, change);
+      }
+      onClose();
+    } catch (e) {
+      alert("操作失敗：" + e.message);
+    }
+    setSaving(false);
+  };
+
+  const today = new Date().toISOString().split("T")[0];
+  const isFuture = effectiveDate > today;
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#FFF", borderRadius:14, width:"100%", maxWidth:440, maxHeight:"90vh", overflow:"auto", boxShadow:"0 24px 48px rgba(0,0,0,0.3)" }}>
+        <div style={{ padding:"18px 20px", borderBottom:`1px solid ${C.border}` }}>
+          <h3 style={{ fontSize:16, fontWeight:700, color:C.text, margin:0 }}>人員異動</h3>
+          <p style={{ fontSize:12, color:C.textLight, margin:"4px 0 0" }}>{user.name}（{user.empNo}）· 目前：{user.department}{user.division?` / ${user.division}`:""}</p>
+        </div>
+        <div style={{ padding:"20px" }}>
+          {/* 異動類型 */}
+          <label style={{ display:"block", fontSize:12, color:C.textMid, marginBottom:6, fontWeight:500 }}>異動類型</label>
+          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+            {Object.entries(typeInfo).map(([k, info]) => (
+              <button key={k} onClick={() => setType(k)} style={{ flex:1, minWidth:100, padding:"10px", borderRadius:8, border:`2px solid ${type===k?info.color:C.border}`, background:type===k?`${info.color}10`:"#FFF", cursor:"pointer", textAlign:"center" }}>
+                <div style={{ fontSize:18 }}>{info.icon}</div>
+                <div style={{ fontSize:12, fontWeight:600, color:type===k?info.color:C.text, marginTop:3 }}>{info.label}</div>
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize:11, color:C.textLight, margin:"-8px 0 16px" }}>{typeInfo[type].desc}</p>
+
+          {/* 調部門才顯示新部門欄位 */}
+          {type === "transfer" && (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+              <Field label="新處別"><input value={newDepartment} onChange={e => setNewDepartment(e.target.value)} style={inp} placeholder="例：工程中心" /></Field>
+              <Field label="新部別"><input value={newDivision} onChange={e => setNewDivision(e.target.value)} style={inp} placeholder="選填" /></Field>
+              <Field label="新組別"><input value={newGroup} onChange={e => setNewGroup(e.target.value)} style={inp} placeholder="選填" /></Field>
+            </div>
+          )}
+
+          {/* 生效日期 */}
+          <Field label="生效日期">
+            <input type="date" value={effectiveDate} onChange={e => setEffectiveDate(e.target.value)} style={inp} />
+          </Field>
+          <p style={{ fontSize:11, color: isFuture?C.textLight:C.warning, margin:"4px 0 14px", lineHeight:1.5 }}>
+            {isFuture
+              ? `💡 此異動將於 ${effectiveDate} 由系統自動生效（該員工當天之後登入時觸發）`
+              : "⚠️ 生效日為今天或過去，建議直接「立即執行」"}
+          </p>
+
+          {/* 備註 */}
+          <Field label="備註（選填）">
+            <input value={note} onChange={e => setNote(e.target.value)} style={inp} placeholder="調動原因、留停期間等" />
+          </Field>
+
+          <div style={{ padding:"10px 12px", background:`${C.accent}08`, borderRadius:7, fontSize:11, color:C.navy, margin:"14px 0", lineHeight:1.6 }}>
+            💡 <strong>自動鎖帳號說明：</strong>設定未來日期後，系統會在該員工「生效日當天之後首次登入」時自動套用（留停/離職會擋下登入）。<br />
+            <span style={{ color:C.textLight }}>※ 完整的「半夜準時自動鎖定」需公司伺服器排程，未來移轉後即可支援。</span>
+          </div>
+
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+            <Btn onClick={onClose} variant="outline">取消</Btn>
+            {isFuture
+              ? <Btn onClick={() => submit(false)} disabled={saving} variant="gold">{saving?"處理中...":"排定異動"}</Btn>
+              : <Btn onClick={() => submit(true)} disabled={saving} style={{ background:typeInfo[type].color, border:"none", color:"#FFF" }}>{saving?"處理中...":"立即執行"}</Btn>
+            }
+          </div>
+        </div>
       </div>
     </div>
   );
