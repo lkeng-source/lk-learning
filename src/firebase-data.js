@@ -125,6 +125,101 @@ export const updateUserData = async (uid, data) => {
   await updateDoc(doc(db, "users", uid), data);
 };
 
+// ───────────────────────────────────────────
+// 人員異動（調部門 / 留職停薪 / 離職）
+// 設定生效日期，到期後（使用者或管理員觸發檢查時）自動套用
+// ───────────────────────────────────────────
+
+// 排定一筆異動（存入 pendingChange，等生效日到了再套用）
+export const scheduleUserChange = async (uid, change) => {
+  // change = { type, effectiveDate, note, newDepartment, newDivision, newGroup }
+  await updateDoc(doc(db, "users", uid), {
+    pendingChange: {
+      type: change.type,                       // transfer（調部門）/ suspend（留停）/ resign（離職）
+      effectiveDate: change.effectiveDate,     // YYYY-MM-DD
+      note: change.note || "",
+      newDepartment: change.newDepartment || "",
+      newDivision: change.newDivision || "",
+      newGroup: change.newGroup || "",
+      createdAt: new Date().toISOString(),
+    },
+  });
+};
+
+// 取消尚未生效的異動
+export const cancelUserChange = async (uid) => {
+  await updateDoc(doc(db, "users", uid), { pendingChange: null });
+};
+
+// 立即套用一筆異動（不等日期；管理員手動執行用）
+export const applyUserChange = async (uid, change) => {
+  const updates = { pendingChange: null };
+  if (change.type === "transfer") {
+    if (change.newDepartment) updates.department = change.newDepartment;
+    updates.division = change.newDivision || "";
+    updates.group = change.newGroup || "";
+    updates.statusNote = `${change.effectiveDate} 調動：${change.note || ""}`;
+  } else if (change.type === "suspend") {
+    updates.status = "suspended";
+    updates.statusEffectiveDate = change.effectiveDate;
+    updates.statusNote = `留職停薪（${change.effectiveDate} 起）${change.note ? "：" + change.note : ""}`;
+  } else if (change.type === "resign") {
+    updates.status = "inactive";
+    updates.statusEffectiveDate = change.effectiveDate;
+    updates.statusNote = `離職（${change.effectiveDate} 起）${change.note ? "：" + change.note : ""}`;
+  }
+  await updateDoc(doc(db, "users", uid), updates);
+};
+
+// 復職（留停 → 使用中），解除鎖定
+export const reactivateUser = async (uid) => {
+  await updateDoc(doc(db, "users", uid), {
+    status: "active",
+    statusEffectiveDate: "",
+    statusNote: "已復職",
+    pendingChange: null,
+  });
+};
+
+// 手動切換帳號狀態（管理員直接設定）
+export const setUserStatus = async (uid, status, note) => {
+  await updateDoc(doc(db, "users", uid), {
+    status,
+    statusNote: note || "",
+    ...(status === "active" ? { statusEffectiveDate: "", pendingChange: null } : {}),
+  });
+};
+
+// 檢查並套用「已到生效日」的異動（登入時呼叫）
+// 回傳 { applied: bool, blocked: bool, message } — blocked 表示帳號已被鎖，應擋下登入
+export const checkAndApplyPendingChange = async (userData) => {
+  const pc = userData.pendingChange;
+  const today = new Date().toISOString().split("T")[0];  // YYYY-MM-DD
+
+  // 先看目前狀態是否已被停用 / 暫停（之前已套用過的）
+  if (userData.status === "inactive") {
+    return { blocked: true, message: "您的帳號已停用（離職/異動），如有疑問請聯絡管理處。" };
+  }
+  if (userData.status === "suspended") {
+    return { blocked: true, message: "您的帳號目前為留職停薪狀態，已暫停使用。如需復職請聯絡管理處。" };
+  }
+
+  // 有待生效的異動，且日期已到
+  if (pc && pc.effectiveDate && pc.effectiveDate <= today) {
+    await applyUserChange(userData.id, pc);
+    if (pc.type === "suspend") {
+      return { blocked: true, applied: true, message: "您的帳號自今日起留職停薪，已暫停使用。如需復職請聯絡管理處。" };
+    }
+    if (pc.type === "resign") {
+      return { blocked: true, applied: true, message: "您的帳號已停用（離職生效）。如有疑問請聯絡管理處。" };
+    }
+    // 調部門：不擋登入，只更新資料
+    return { blocked: false, applied: true, message: "" };
+  }
+
+  return { blocked: false, applied: false, message: "" };
+};
+
 // 即時訂閱單一使用者資料（含收藏 favorites）
 export const watchUserData = (uid, callback) => {
   return onSnapshot(doc(db, "users", uid), (snap) => {
