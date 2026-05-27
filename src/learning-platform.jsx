@@ -183,6 +183,24 @@ function StarRating({ value = 0, size = 18, onChange, readonly = true }) {
 
 
 /* ─── L&K Logo 元件（仿亞翔工程原版 logo）─── */
+/* ─── 人像 icon（講師用，乾淨線條風格）─── */
+function PersonIcon({ size = 16, color = "#5A6878", filled = false }) {
+  if (filled) {
+    return (
+      <svg viewBox="0 0 24 24" width={size} height={size} style={{ display:"block", flexShrink:0 }}>
+        <circle cx="12" cy="8" r="4" fill={color} />
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" fill={color} />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} style={{ display:"block", flexShrink:0 }}>
+      <circle cx="12" cy="8" r="3.5" fill="none" stroke={color} strokeWidth="1.8" />
+      <path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function LKLogo({ size = 36, color = "#D4A528" }) {
   // viewBox 比例設計：L、(&)、K、® 四個元素
   // 整體比例約 寬:高 = 2.6:1
@@ -623,14 +641,14 @@ function Front({ currentUser, onLogout, setView }) {
   };
 
   // ─── 公開儀表板數據（依月份篩選）───
-  // 產生最近 12 個月的選項
+  // 產生今年 1 月到當月的選項
   const monthOptions = useMemo(() => {
     const opts = [{ value:"all", label:"全部期間" }];
     const now = new Date();
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      opts.push({ value, label: `${d.getFullYear()} 年 ${d.getMonth()+1} 月` });
+    const year = now.getFullYear();
+    for (let m = now.getMonth(); m >= 0; m--) {
+      const value = `${year}-${String(m+1).padStart(2,"0")}`;
+      opts.push({ value, label: `${year} 年 ${m+1} 月` });
     }
     return opts;
   }, []);
@@ -759,7 +777,8 @@ function Front({ currentUser, onLogout, setView }) {
         <div style={{ padding:16, flex:1, display:"flex", flexDirection:"column" }}>
           <h3 style={{ margin:0, fontSize:17, fontWeight:700, color:C.text, lineHeight:1.4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden", minHeight:48 }}>{course.title}</h3>
           <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:10 }}>
-            <span style={{ fontSize:14, color:C.textMid, fontWeight:600 }}>👨‍🏫 {course.instructor}</span>
+            <PersonIcon size={15} color={C.textMid} />
+            <span style={{ fontSize:14, color:C.textMid, fontWeight:600 }}>{course.instructor}</span>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, fontSize:13, color:C.textMid }}>
             <span>{isArticle ? "📄 圖文" : `🕐 ${course.duration} 分鐘`}</span>
@@ -1160,7 +1179,7 @@ function InboxPage({ myQuestions, courses, currentUser, onOpenCourse }) {
                     {answered ? (
                       <div style={{ padding:"12px 14px", background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}30` }}>
                         <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
-                          <span style={{ fontSize:13 }}>👨‍🏫</span>
+                          <PersonIcon size={14} color={C.navy} filled />
                           <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>講師回覆</span>
                           {q.answeredAt?.toDate && <span style={{ fontSize:10, color:C.textLight }}>· {q.answeredAt.toDate().toLocaleDateString("zh-TW")}</span>}
                         </div>
@@ -1596,7 +1615,7 @@ function CoursePage({ categories, course, goBack, watchHistory, currentUser, rec
                 {/* 講師回覆 */}
                 <div style={{ padding:"14px 16px", background:`${C.gold}08` }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                    <span style={{ width:28, height:28, borderRadius:"50%", background:`${C.gold}25`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>👨‍🏫</span>
+                    <span style={{ width:28, height:28, borderRadius:"50%", background:`${C.gold}25`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><PersonIcon size={16} color={C.navy} filled /></span>
                     <span style={{ fontSize:13, fontWeight:600, color:C.navy }}>講師回覆</span>
                   </div>
                   <p style={{ margin:0, fontSize:13, color:C.text, lineHeight:1.6 }}>{q.answer}</p>
@@ -3418,7 +3437,7 @@ function QuestionAdmin({ questions, courses }) {
                   {q.status === "answered" ? (
                     <div style={{ padding:"12px 14px", background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}30` }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
-                        <span style={{ fontSize:13 }}>👨‍🏫</span>
+                        <PersonIcon size={14} color={C.navy} filled />
                         <span style={{ fontSize:12, fontWeight:600, color:C.navy }}>講師回覆</span>
                         {q.answeredAt?.toDate && <span style={{ fontSize:10, color:C.textLight }}>· {q.answeredAt.toDate().toLocaleDateString("zh-TW")}</span>}
                       </div>
