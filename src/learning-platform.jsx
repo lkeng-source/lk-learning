@@ -2199,6 +2199,10 @@ function CourseAdmin({ categories, courses }) {
           {/* 影片型課程：章節設定區 */}
           {contentType === "video" && (
           <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📋 章節設定（每章節對應一支影片）</p>
+              <Btn onClick={addChapter} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增章節</Btn>
+            </div>
             <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.7 }}>
               💡 <strong>支援的影片來源：</strong><br />
               <strong>▶ YouTube</strong>：貼上影片網址（公開或不公開且允許嵌入）<br />
