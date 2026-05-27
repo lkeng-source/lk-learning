@@ -97,7 +97,7 @@ export const watchAllUsers = (callback) => {
 // 或者用 Cloud Functions（需付費）
 // 暫時的折衷方案：用 createUserWithEmailAndPassword，但會自動登入新使用者
 // 所以我們用一個變通方法：建立後請管理員重新登入
-export const createUserAccount = async (empNo, name, email, password, role, department) => {
+export const createUserAccount = async (empNo, name, email, password, role, department, division, group) => {
   // 用 Auth 建立帳號（會自動登入這個新帳號，需要再讓 admin 重新登入）
   const result = await createUserWithEmailAndPassword(auth, email, password || empNo);
   const uid = result.user.uid;
@@ -106,9 +106,16 @@ export const createUserAccount = async (empNo, name, email, password, role, depa
     empNo,
     name,
     email,
-    role: role || "user",
-    department: department || "",
-    mustChangePw: !password, // 沒給密碼就是用預設員工編號當密碼，需要改
+    role: role || "user",          // superadmin（系統管理員）/ admin（管理員）/ user（使用者）
+    department: department || "",  // 處別
+    division: division || "",      // 部別
+    group: group || "",            // 組別（少數單位才有，如設計部）
+    status: "active",              // active（使用中）/ suspended（已暫停/留停）/ inactive（已停用/離職）
+    statusEffectiveDate: "",       // 異動生效日期（YYYY-MM-DD），到期自動鎖
+    statusNote: "",                // 異動備註（調部門到哪、留停原因等）
+    managerScope: "",              // 主管管轄範圍：""（無）/ "division"（管部）/ "department"（管處）
+    mustChangePw: !password,
+    favorites: [],
     createdAt: serverTimestamp(),
   });
   return uid;
