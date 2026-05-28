@@ -2887,16 +2887,13 @@ function UserAdmin({ users }) {
                 </td>
                 <td style={{ padding:"8px 10px" }}>
                   <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-                    {u.status === "active" && (
+                    {u.status !== "suspended" && u.status !== "inactive" && (
                       <>
                         <Btn onClick={() => startEdit(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10 }}>編輯</Btn>
                         <Btn onClick={() => setMoveModal(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10, borderColor:C.warning, color:C.warning }}>異動</Btn>
                       </>
                     )}
-                    {u.status === "suspended" && (
-                      <Btn onClick={() => handleReactivate(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10, borderColor:C.success, color:C.success }}>🔓 復職</Btn>
-                    )}
-                    {u.status === "inactive" && (
+                    {(u.status === "suspended" || u.status === "inactive") && (
                       <Btn onClick={() => handleReactivate(u)} variant="outline" style={{ padding:"3px 7px", fontSize:10, borderColor:C.success, color:C.success }}>🔓 復職</Btn>
                     )}
                     <Btn onClick={() => remove(u)} variant="danger" style={{ padding:"3px 7px", fontSize:10 }}>刪除</Btn>
