@@ -653,6 +653,29 @@ function Front({ currentUser, onLogout, setView }) {
     catch (e) { console.error("toggle favorite failed:", e); }
   };
 
+  // 大頭貼上傳（demo：base64 存資料庫，未來換伺服器改成上傳）
+  const avatarFileRef = useRef(null);
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("請選擇圖片檔案"); return; }
+    if (file.size > 500 * 1024) {
+      alert("⚠️ 大頭貼需小於 500 KB。\n\n請選擇較小的圖片，或先壓縮後再上傳。\n（未來改用公司伺服器後就沒有此限制）");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try { await updateUserData(currentUser.id, { avatar: ev.target.result }); }
+      catch (err) { alert("上傳失敗：" + err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  const handleAvatarRemove = async () => {
+    if (!confirm("確定要移除大頭貼嗎？")) return;
+    try { await updateUserData(currentUser.id, { avatar: "" }); }
+    catch (e) { alert("移除失敗：" + e.message); }
+  };
+
   // ─── 公開儀表板數據（依月份篩選）───
   // 產生今年 1 月到當月的選項
   const monthOptions = useMemo(() => {
@@ -845,7 +868,7 @@ function Front({ currentUser, onLogout, setView }) {
               onMouseOver={e => { e.currentTarget.style.background = `${C.navy}08`; }}
               onMouseOut={e => { e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:13, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
+              <div style={{ width:30, height:30, borderRadius:"50%", overflow:"hidden", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:13, fontWeight:600 }}>{userData?.avatar ? <img src={userData.avatar} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : (currentUser.name?.[0]||"?")}</div>
               <span style={{ fontSize:12, color:C.textMid, fontWeight:500 }}>▾</span>
             </button>
             {showUserMenu && (
@@ -858,7 +881,6 @@ function Front({ currentUser, onLogout, setView }) {
                   </div>
                   <button onClick={() => { setPage("settings"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>👤 個人檔案</button>
                   <button onClick={() => { setPage("profile"); setLearnTab("fav"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>❤️ 我的收藏{favorites.length > 0 && <span style={{ marginLeft:"auto", fontSize:11, color:C.textLight }}>{favorites.length}</span>}</button>
-                  <button onClick={() => { setPage("settings"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>⚙️ 帳號設定</button>
                   <button onClick={() => { setPage("inbox"); setShowUserMenu(false); }} style={{ width:"100%", padding:"10px 14px", border:"none", background:"transparent", textAlign:"left", fontSize:13, color:C.text, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=C.bgSoft} onMouseOut={e=>e.currentTarget.style.background="transparent"}>✉️ 我的信箱{unreadCount > 0 && <span style={{ marginLeft:"auto", minWidth:18, height:18, padding:"0 5px", borderRadius:9, background:C.danger, color:"#FFF", fontSize:10, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>{unreadCount}</span>}</button>
                   <button onClick={() => { onLogout(); }} style={{ width:"100%", padding:"10px 14px", border:"none", borderTop:`1px solid ${C.border}`, background:"transparent", textAlign:"left", fontSize:13, color:C.danger, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }} onMouseOver={e=>e.currentTarget.style.background=`${C.danger}08`} onMouseOut={e=>e.currentTarget.style.background="transparent"}>🚪 登出</button>
                 </div>
@@ -1072,26 +1094,46 @@ function Front({ currentUser, onLogout, setView }) {
         <InboxPage myQuestions={myQuestions} courses={courses} currentUser={currentUser} onOpenCourse={(c) => { setSelectedCourse(c); setPage("course"); }} />
       )}
 
-      {/* 帳號設定 */}
+      {/* 個人檔案 */}
       {page==="settings" && (
         <div style={{ padding:"24px 20px", maxWidth:680, margin:"0 auto" }}>
-          <h2 style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:18 }}>⚙️ 帳號設定</h2>
+          <h2 style={{ fontSize:20, fontWeight:700, color:C.text, marginBottom:18 }}>👤 個人檔案</h2>
 
           {/* 個人資料卡 */}
           <div style={{ background:"#FFF", borderRadius:12, padding:20, border:`1px solid ${C.border}`, marginBottom:16 }}>
-            <h3 style={{ fontSize:14, fontWeight:700, color:C.text, margin:"0 0 14px" }}>個人資料</h3>
-            <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:16 }}>
-              <div style={{ width:56, height:56, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:24, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
+            <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:18 }}>
+              {/* 大頭貼 */}
+              <div style={{ position:"relative", flexShrink:0 }}>
+                <div style={{ width:72, height:72, borderRadius:"50%", overflow:"hidden", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:30, fontWeight:600 }}>
+                  {userData?.avatar ? (
+                    <img src={userData.avatar} alt="大頭貼" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  ) : (
+                    currentUser.name?.[0] || "?"
+                  )}
+                </div>
+                <button
+                  onClick={() => avatarFileRef.current?.click()}
+                  title="更換大頭貼"
+                  style={{ position:"absolute", bottom:-2, right:-2, width:26, height:26, borderRadius:"50%", border:"2px solid #FFF", background:C.gold, color:"#FFF", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, padding:0 }}
+                >📷</button>
+                <input ref={avatarFileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display:"none" }} />
+              </div>
               <div>
-                <p style={{ margin:0, fontSize:16, fontWeight:600, color:C.text }}>{currentUser.name}</p>
+                <p style={{ margin:0, fontSize:18, fontWeight:600, color:C.text }}>{currentUser.name}</p>
                 <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="superadmin" ? "系統管理員" : currentUser.role==="admin" ? "管理員" : "一般使用者"}</p>
+                {userData?.avatar && (
+                  <button onClick={handleAvatarRemove} style={{ marginTop:6, border:"none", background:"none", color:C.danger, fontSize:11, cursor:"pointer", padding:0, textDecoration:"underline" }}>移除大頭貼</button>
+                )}
               </div>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px,1fr))", gap:12 }}>
+
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px,1fr))", gap:12 }}>
               {[
-                {l:"員工編號", v:currentUser.empNo},
-                {l:"處別", v:currentUser.department || "—"},
-                {l:"電子信箱", v:currentUser.email || "—"},
+                { l:"員工編號", v:currentUser.empNo || "—" },
+                { l:"電子信箱", v:currentUser.email || "—" },
+                { l:"處別", v:currentUser.department || "—" },
+                ...(currentUser.division ? [{ l:"部別", v:currentUser.division }] : []),
+                ...(currentUser.group ? [{ l:"組別", v:currentUser.group }] : []),
               ].map(f => (
                 <div key={f.l} style={{ padding:"10px 12px", background:C.bg, borderRadius:8 }}>
                   <p style={{ margin:0, fontSize:11, color:C.textLight }}>{f.l}</p>
@@ -1100,7 +1142,7 @@ function Front({ currentUser, onLogout, setView }) {
               ))}
             </div>
             <p style={{ fontSize:11, color:C.textLight, margin:"12px 0 0", lineHeight:1.6 }}>
-              💡 個人資料由管理員統一維護，如需修改請聯絡管理處。
+              💡 大頭貼可自行更換；其他個人資料由管理員統一維護，如需修改請聯絡管理處。
             </p>
           </div>
 
