@@ -1912,6 +1912,12 @@ function Quiz({ course, goBack, saveQuiz }) {
                         );
                       })}
                     </div>
+                    {q.explanation && (
+                      <div style={{ marginTop:10, padding:"10px 12px", background:`${C.accent}08`, borderRadius:7, borderLeft:`3px solid ${C.accent}` }}>
+                        <span style={{ fontSize:11, fontWeight:600, color:C.accent }}>💡 詳解</span>
+                        <p style={{ margin:"4px 0 0", fontSize:12, color:C.textMid, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{q.explanation}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2357,7 +2363,7 @@ function CourseAdmin({ categories, courses }) {
           <div style={{ marginTop:14, padding:12, background:C.bg, borderRadius:8 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
               <p style={{ margin:0, fontSize:13, fontWeight:600, color:C.text }}>📝 課後測驗題目（共 {quiz.length} 題）</p>
-              <Btn onClick={() => setQuiz(p => [...p, { q:"", options:["","","",""], answer:0 }])} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增題目</Btn>
+              <Btn onClick={() => setQuiz(p => [...p, { q:"", options:["","","",""], answer:0, explanation:"" }])} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>+ 新增題目</Btn>
             </div>
             <div style={{ padding:"8px 10px", background:`${C.gold}10`, borderRadius:6, fontSize:11, color:C.navy, marginBottom:10, lineHeight:1.6 }}>
               💡 <strong>說明</strong>：每題有 4 個選項，請勾選正確答案。前台測驗需答對 60% 才算通過。沒有題目的課程，前台不會顯示測驗按鈕。
@@ -2400,6 +2406,17 @@ function CourseAdmin({ categories, courses }) {
                       />
                     </div>
                   ))}
+                </div>
+                <div style={{ marginTop:10 }}>
+                  <Field label="詳解（選填，同仁看答題詳解時顯示）">
+                    <textarea
+                      value={q.explanation || ""}
+                      onChange={e => setQuiz(p => p.map((qq,i) => i===qi ? {...qq, explanation:e.target.value} : qq))}
+                      rows={2}
+                      placeholder="說明為什麼這個答案正確，幫助同仁理解（留空則不顯示詳解）"
+                      style={{ ...inp, padding:"8px 10px", fontSize:12, resize:"vertical", fontFamily:"inherit" }}
+                    />
+                  </Field>
                 </div>
               </div>
             ))}
@@ -2805,8 +2822,8 @@ function UserAdmin({ users }) {
             <Field label="電子信箱 *"><input value={email} onChange={e => setEmail(e.target.value)} style={inp} placeholder="user@lkeng.com" disabled={!!editId} /></Field>
             {!editId && <Field label="密碼（留空 = 員工編號）"><input value={password} onChange={e => setPassword(e.target.value)} style={inp} placeholder="密碼" /></Field>}
             <Field label="處別"><input value={department} onChange={e => setDepartment(e.target.value)} style={inp} placeholder="例：管理處" /></Field>
-            <Field label="部別"><input value={division} onChange={e => setDivision(e.target.value)} style={inp} placeholder="例：人資部（選填）" /></Field>
-            <Field label="組別"><input value={group} onChange={e => setGroup(e.target.value)} style={inp} placeholder="少數單位才有（選填）" /></Field>
+            <Field label="部別"><input value={division} onChange={e => setDivision(e.target.value)} style={inp} placeholder="（選填）" /></Field>
+            <Field label="組別"><input value={group} onChange={e => setGroup(e.target.value)} style={inp} placeholder="（選填）" /></Field>
             <Field label="角色">
               <select value={role} onChange={e => setRole(e.target.value)} style={inp}>
                 <option value="user">使用者</option>
@@ -3445,6 +3462,12 @@ function QuizDetailModal({ record, courses, onClose }) {
                     <p style={{ margin:"4px 0 0", fontSize:10, color:C.warning, fontStyle:"italic" }}>⚠️ 此題未作答</p>
                   )}
                 </div>
+                {q.explanation && (
+                  <div style={{ marginTop:8, padding:"8px 10px", background:`${C.accent}08`, borderRadius:6, borderLeft:`3px solid ${C.accent}` }}>
+                    <span style={{ fontSize:10, fontWeight:600, color:C.accent }}>💡 詳解</span>
+                    <p style={{ margin:"3px 0 0", fontSize:11, color:C.textMid, lineHeight:1.6, whiteSpace:"pre-wrap" }}>{q.explanation}</p>
+                  </div>
+                )}
               </div>
             );
           })}
