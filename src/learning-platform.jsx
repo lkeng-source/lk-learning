@@ -653,29 +653,6 @@ function Front({ currentUser, onLogout, setView }) {
     catch (e) { console.error("toggle favorite failed:", e); }
   };
 
-  // 大頭貼上傳（demo：base64 存資料庫，未來換伺服器改成上傳）
-  const avatarFileRef = useRef(null);
-  const handleAvatarUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { alert("請選擇圖片檔案"); return; }
-    if (file.size > 500 * 1024) {
-      alert("⚠️ 大頭貼需小於 500 KB。\n\n請選擇較小的圖片，或先壓縮後再上傳。\n（未來改用公司伺服器後就沒有此限制）");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try { await updateUserData(currentUser.id, { avatar: ev.target.result }); }
-      catch (err) { alert("上傳失敗：" + err.message); }
-    };
-    reader.readAsDataURL(file);
-  };
-  const handleAvatarRemove = async () => {
-    if (!confirm("確定要移除大頭貼嗎？")) return;
-    try { await updateUserData(currentUser.id, { avatar: "" }); }
-    catch (e) { alert("移除失敗：" + e.message); }
-  };
-
   // ─── 公開儀表板數據（依月份篩選）───
   // 產生今年 1 月到當月的選項
   const monthOptions = useMemo(() => {
@@ -868,7 +845,7 @@ function Front({ currentUser, onLogout, setView }) {
               onMouseOver={e => { e.currentTarget.style.background = `${C.navy}08`; }}
               onMouseOut={e => { e.currentTarget.style.background = "transparent"; }}
             >
-              <div style={{ width:30, height:30, borderRadius:"50%", overflow:"hidden", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:13, fontWeight:600 }}>{userData?.avatar ? <img src={userData.avatar} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : (currentUser.name?.[0]||"?")}</div>
+              <div style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:13, fontWeight:600 }}>{currentUser.name?.[0]||"?"}</div>
               <span style={{ fontSize:12, color:C.textMid, fontWeight:500 }}>▾</span>
             </button>
             {showUserMenu && (
@@ -1102,28 +1079,12 @@ function Front({ currentUser, onLogout, setView }) {
           {/* 個人資料卡 */}
           <div style={{ background:"#FFF", borderRadius:12, padding:20, border:`1px solid ${C.border}`, marginBottom:16 }}>
             <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:18 }}>
-              {/* 大頭貼 */}
-              <div style={{ position:"relative", flexShrink:0 }}>
-                <div style={{ width:72, height:72, borderRadius:"50%", overflow:"hidden", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:30, fontWeight:600 }}>
-                  {userData?.avatar ? (
-                    <img src={userData.avatar} alt="大頭貼" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                  ) : (
-                    currentUser.name?.[0] || "?"
-                  )}
-                </div>
-                <button
-                  onClick={() => avatarFileRef.current?.click()}
-                  title="更換大頭貼"
-                  style={{ position:"absolute", bottom:-2, right:-2, width:26, height:26, borderRadius:"50%", border:"2px solid #FFF", background:C.gold, color:"#FFF", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, padding:0 }}
-                >📷</button>
-                <input ref={avatarFileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display:"none" }} />
+              <div style={{ width:72, height:72, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, display:"flex", alignItems:"center", justifyContent:"center", color:"#FFF", fontSize:30, fontWeight:600, flexShrink:0 }}>
+                {currentUser.name?.[0] || "?"}
               </div>
               <div>
                 <p style={{ margin:0, fontSize:18, fontWeight:600, color:C.text }}>{currentUser.name}</p>
                 <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="superadmin" ? "系統管理員" : currentUser.role==="admin" ? "管理員" : "一般使用者"}</p>
-                {userData?.avatar && (
-                  <button onClick={handleAvatarRemove} style={{ marginTop:6, border:"none", background:"none", color:C.danger, fontSize:11, cursor:"pointer", padding:0, textDecoration:"underline" }}>移除大頭貼</button>
-                )}
               </div>
             </div>
 
@@ -1142,7 +1103,7 @@ function Front({ currentUser, onLogout, setView }) {
               ))}
             </div>
             <p style={{ fontSize:11, color:C.textLight, margin:"12px 0 0", lineHeight:1.6 }}>
-              💡 大頭貼可自行更換；其他個人資料由管理員統一維護，如需修改請聯絡管理處。
+              💡 個人資料由管理員統一維護，如需修改請聯絡管理處。
             </p>
           </div>
 
@@ -2025,6 +1986,9 @@ function Admin({ currentUser, onLogout, setView }) {
     [categories]
   );
 
+  // 是否為主管（部級/處級）— 決定是否顯示「我的團隊」分頁
+  const isManager = currentUser?.managerScope === "division" || currentUser?.managerScope === "department";
+
   const tabs = [
     { id:"dashboard", label:"總覽", icon:"📊" },
     { id:"courses", label:"課程管理", icon:"📚" },
@@ -2033,6 +1997,7 @@ function Admin({ currentUser, onLogout, setView }) {
     { id:"analytics", label:"學習分析", icon:"📈" },
     { id:"quizzes", label:"測驗紀錄", icon:"📝" },
     { id:"questions", label:"問答管理", icon:"🙋", badge: pendingQuestionsCount },
+    ...(isManager ? [{ id:"team", label:"我的團隊", icon:"👨‍👩‍👧‍👦" }] : []),
   ];
 
   if (loading) return <LoadingScreen text="載入後台資料..." />;
@@ -2069,6 +2034,7 @@ function Admin({ currentUser, onLogout, setView }) {
         {tab==="analytics" && <Analytics courses={courses} users={users} allWatchHistory={allWatchHistory} />}
         {tab==="quizzes" && <QuizRecords quizResults={quizResults} users={users} courses={courses} />}
         {tab==="questions" && <QuestionAdmin questions={questions} courses={courses} />}
+        {tab==="team" && <TeamReport currentUser={currentUser} users={users} courses={courses} allWatchHistory={allWatchHistory} quizResults={quizResults} />}
       </div>
     </div>
   );
@@ -2119,6 +2085,8 @@ function Dashboard({ courses, users, categories }) {
 function CourseAdmin({ categories, courses }) {
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [searchKw, setSearchKw] = useState("");      // 搜尋：課程名稱 / 講師
+  const [filterCat, setFilterCat] = useState("");    // 篩選：分類
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState(categories[0]?.id || "");
   const [instructor, setInstructor] = useState("");
@@ -2217,6 +2185,32 @@ function CourseAdmin({ categories, courses }) {
   const updateChapter = (idx, key, val) => setChapters(prev => prev.map((c,i) => i===idx ? { ...c, [key]: val } : c));
   const addChapter = () => setChapters(prev => [...prev, { title:`第${prev.length+1}章`, duration:15, youtubeUrl:"" }]);
   const removeChapter = (idx) => setChapters(prev => prev.length > 1 ? prev.filter((_,i) => i!==idx) : prev);
+
+  // 時間格式化（Firestore Timestamp → YYYY/MM/DD HH:mm）
+  const fmtTime = (ts) => {
+    if (!ts?.toDate) return "—";
+    const d = ts.toDate();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  // 篩選 + 排序（最新更新在上）
+  const displayCourses = courses
+    .filter(c => {
+      if (filterCat && c.category !== filterCat) return false;
+      if (searchKw) {
+        const kw = searchKw.trim().toLowerCase();
+        const hay = `${c.title||""} ${c.instructor||""}`.toLowerCase();
+        if (!hay.includes(kw)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      // 依「最後更新時間」新到舊；沒有 updatedAt 的用 createdAt
+      const ta = (a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0) || (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0);
+      const tb = (b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0) || (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0);
+      return tb - ta;
+    });
 
   return (
     <div>
@@ -2521,26 +2515,40 @@ function CourseAdmin({ categories, courses }) {
         </div>
       )}
 
+      {/* 搜尋 + 分類篩選 */}
+      <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+        <input value={searchKw} onChange={e => setSearchKw(e.target.value)} placeholder="🔍 搜尋課程名稱、講師..." style={{ ...inp, flex:1, minWidth:200 }} />
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ ...inp, maxWidth:180 }}>
+          <option value="">全部分類</option>
+          {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
+        </select>
+        {(searchKw || filterCat) && <Btn onClick={() => { setSearchKw(""); setFilterCat(""); }} variant="outline" style={{ fontSize:11 }}>✕ 清除</Btn>}
+        <span style={{ fontSize:12, color:C.textLight, alignSelf:"center" }}>共 {displayCourses.length} 門</span>
+      </div>
+
       <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse", minWidth:700 }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", minWidth:880 }}>
           <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-            {["課程名稱","分類","講師","章節/影片","題目","附件","瀏覽","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
+            {["課程名稱","分類","講師","章節","題目","瀏覽","上架時間","最後更新","狀態","操作"].map(h => <th key={h} style={{ padding:"9px 10px", textAlign:"left", color:C.textLight, fontSize:11, fontWeight:500 }}>{h}</th>)}
           </tr></thead>
           <tbody>
-            {courses.map(c => {
+            {displayCourses.length === 0 ? (
+              <tr><td colSpan={10} style={{ padding:36, textAlign:"center", color:C.textLight, fontSize:13 }}>沒有符合條件的課程</td></tr>
+            ) : displayCourses.map(c => {
               const cat = categories.find(cc => cc.id===c.category);
               const videoCount = (c.chapters||[]).filter(ch => getYouTubeId(ch.youtubeUrl)).length;
               const quizCount = (c.quiz||[]).length;
               const fileCount = (c.files||[]).length;
               return (
                 <tr key={c.id} style={{ borderBottom:`1px solid ${C.border}` }}>
-                  <td style={{ padding:"8px 10px", fontSize:12, color:C.text }}>{c.title}</td>
+                  <td style={{ padding:"8px 10px", fontSize:12, color:C.text, fontWeight:500 }}>{c.contentType==="article"?"📄 ":""}{c.title}</td>
                   <td style={{ padding:"8px 10px" }}><span style={{ fontSize:10, padding:"2px 6px", borderRadius:4, background:`${cat?.color||C.navy}12`, color:cat?.color||C.navy }}>{cat?.name||"未分類"}</span></td>
                   <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{c.instructor}</td>
-                  <td style={{ padding:"8px 10px", fontSize:11, color:C.textMid }}>{videoCount}/{(c.chapters||[]).length} 🎬</td>
+                  <td style={{ padding:"8px 10px", fontSize:11, color:C.textMid }}>{c.contentType==="article" ? "圖文" : `${videoCount}/${(c.chapters||[]).length} 🎬`}</td>
                   <td style={{ padding:"8px 10px", fontSize:11, color: quizCount > 0 ? C.success : C.textLight }}>{quizCount > 0 ? `${quizCount} 📝` : "—"}</td>
-                  <td style={{ padding:"8px 10px", fontSize:11, color: fileCount > 0 ? C.success : C.textLight }}>{fileCount > 0 ? `${fileCount} 📎` : "—"}</td>
                   <td style={{ padding:"8px 10px", fontSize:12, color:C.textMid }}>{c.views||0}</td>
+                  <td style={{ padding:"8px 10px", fontSize:11, color:C.textLight, whiteSpace:"nowrap" }}>{fmtTime(c.createdAt)}</td>
+                  <td style={{ padding:"8px 10px", fontSize:11, color:C.textMid, whiteSpace:"nowrap" }}>{fmtTime(c.updatedAt)}</td>
                   <td style={{ padding:"8px 10px" }}>
                     <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:c.status==="published"?`${C.success}12`:`${C.warning}12`, color:c.status==="published"?C.success:C.warning }}>{c.status==="published"?"已上架":"草稿"}</span>
                   </td>
@@ -2900,7 +2908,7 @@ function UserAdmin({ users }) {
         ))}
       </div>
 
-      {/* 篩選列：搜尋 + 處別下拉 */}
+      {/* 篩選列：搜尋 + 處別下拉 + 檢視切換 */}
       <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
         <input value={searchKw} onChange={e => setSearchKw(e.target.value)} placeholder="🔍 搜尋姓名、員工編號、處別、部別..." style={{ ...inp, flex:1, minWidth:200 }} />
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)} style={{ ...inp, maxWidth:180 }}>
@@ -2908,8 +2916,14 @@ function UserAdmin({ users }) {
           {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         {(searchKw || filterDept) && <Btn onClick={() => { setSearchKw(""); setFilterDept(""); }} variant="outline" style={{ fontSize:11 }}>✕ 清除</Btn>}
+        <div style={{ display:"flex", border:`1px solid ${C.border}`, borderRadius:7, overflow:"hidden" }}>
+          <button onClick={() => setViewMode("list")} style={{ padding:"6px 12px", border:"none", background:viewMode==="list"?C.navy:"#FFF", color:viewMode==="list"?"#FFF":C.textMid, fontSize:12, cursor:"pointer", fontWeight:500 }}>📋 列表</button>
+          <button onClick={() => setViewMode("org")} style={{ padding:"6px 12px", border:"none", background:viewMode==="org"?C.navy:"#FFF", color:viewMode==="org"?"#FFF":C.textMid, fontSize:12, cursor:"pointer", fontWeight:500 }}>🏢 組織架構</button>
+        </div>
       </div>
 
+      {/* ── 列表檢視 ── */}
+      {viewMode === "list" && (
       <div style={{ background:"#FFF", borderRadius:9, border:`1px solid ${C.border}`, overflow:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", minWidth:720 }}>
           <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
@@ -2963,11 +2977,136 @@ function UserAdmin({ users }) {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* ── 組織架構檢視（處 → 部 → 組 → 人，可展開收合）── */}
+      {viewMode === "org" && (
+        <OrgTreeView users={filteredUsers} roleLabel={roleLabel} roleColor={roleColor} />
+      )}
 
       {/* ══════ 異動視窗 ══════ */}
       {moveModal && (
         <MoveModal user={moveModal} onClose={() => setMoveModal(null)} />
       )}
+    </div>
+  );
+}
+
+/* ─── 組織架構樹狀檢視 ─── */
+function OrgTreeView({ users, roleLabel, roleColor }) {
+  const [collapsed, setCollapsed] = useState({});  // 收合狀態 { key: true }
+
+  const toggle = (key) => setCollapsed(p => ({ ...p, [key]: !p[key] }));
+
+  // 建立階層結構：處 → 部 → 組 → 人
+  const tree = useMemo(() => {
+    const t = {};
+    users.forEach(u => {
+      const dept = u.department || "（未分類處別）";
+      const div = u.division || "";
+      const grp = u.group || "";
+      if (!t[dept]) t[dept] = { _direct: [], divs: {} };
+      if (!div) {
+        t[dept]._direct.push(u);
+      } else {
+        if (!t[dept].divs[div]) t[dept].divs[div] = { _direct: [], grps: {} };
+        if (!grp) {
+          t[dept].divs[div]._direct.push(u);
+        } else {
+          if (!t[dept].divs[div].grps[grp]) t[dept].divs[div].grps[grp] = [];
+          t[dept].divs[div].grps[grp].push(u);
+        }
+      }
+    });
+    return t;
+  }, [users]);
+
+  // 計算某處/部/組的總人數
+  const countDept = (d) => {
+    let n = d._direct.length;
+    Object.values(d.divs).forEach(div => { n += div._direct.length; Object.values(div.grps).forEach(g => n += g.length); });
+    return n;
+  };
+  const countDiv = (div) => { let n = div._direct.length; Object.values(div.grps).forEach(g => n += g.length); return n; };
+
+  // 人員列
+  const personRow = (u, indent) => (
+    <div key={u.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", paddingLeft:indent, borderBottom:`1px solid ${C.bgSoft}` }}>
+      <span style={{ width:26, height:26, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, color:"#FFF", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:600, flexShrink:0 }}>{u.name?.[0]||"?"}</span>
+      <span style={{ fontSize:13, color:C.text, fontWeight:500 }}>{u.name}</span>
+      <span style={{ fontSize:11, color:C.textLight, fontFamily:"monospace" }}>{u.empNo}</span>
+      <span style={{ fontSize:9, padding:"2px 7px", borderRadius:6, background:`${roleColor(u.role)}15`, color:roleColor(u.role), fontWeight:600 }}>{roleLabel(u.role)}</span>
+      {u.managerScope && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:6, background:`${C.gold}18`, color:C.navy }}>{u.managerScope==="department"?"處主管":"部主管"}</span>}
+    </div>
+  );
+
+  const deptNames = Object.keys(tree).sort();
+  if (deptNames.length === 0) {
+    return <div style={{ textAlign:"center", padding:48, color:C.textLight, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}` }}>沒有符合條件的使用者</div>;
+  }
+
+  return (
+    <div style={{ background:"#FFF", borderRadius:12, border:`1px solid ${C.border}`, overflow:"hidden" }}>
+      {deptNames.map(deptName => {
+        const dept = tree[deptName];
+        const deptKey = `d:${deptName}`;
+        const deptCollapsed = collapsed[deptKey];
+        return (
+          <div key={deptName}>
+            {/* 處 */}
+            <div onClick={() => toggle(deptKey)} style={{ display:"flex", alignItems:"center", gap:8, padding:"12px 14px", background:`${C.navy}0C`, cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
+              <span style={{ fontSize:12, color:C.navy, width:14 }}>{deptCollapsed ? "▶" : "▼"}</span>
+              <span style={{ fontSize:15 }}>🏢</span>
+              <span style={{ fontSize:14, fontWeight:700, color:C.navy }}>{deptName}</span>
+              <span style={{ fontSize:11, color:C.textLight }}>{countDept(dept)} 人</span>
+            </div>
+            {!deptCollapsed && (
+              <div>
+                {/* 處直屬人員 */}
+                {dept._direct.map(u => personRow(u, 40))}
+                {/* 部 */}
+                {Object.keys(dept.divs).sort().map(divName => {
+                  const div = dept.divs[divName];
+                  const divKey = `${deptKey}>v:${divName}`;
+                  const divCollapsed = collapsed[divKey];
+                  return (
+                    <div key={divName}>
+                      <div onClick={() => toggle(divKey)} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 14px", paddingLeft:30, background:`${C.navyLight}08`, cursor:"pointer", borderBottom:`1px solid ${C.bgSoft}` }}>
+                        <span style={{ fontSize:11, color:C.navyLight, width:14 }}>{divCollapsed ? "▶" : "▼"}</span>
+                        <span style={{ fontSize:13 }}>📁</span>
+                        <span style={{ fontSize:13, fontWeight:600, color:C.navyLight }}>{divName}</span>
+                        <span style={{ fontSize:10, color:C.textLight }}>{countDiv(div)} 人</span>
+                      </div>
+                      {!divCollapsed && (
+                        <div>
+                          {div._direct.map(u => personRow(u, 64))}
+                          {/* 組 */}
+                          {Object.keys(div.grps).sort().map(grpName => {
+                            const grp = div.grps[grpName];
+                            const grpKey = `${divKey}>g:${grpName}`;
+                            const grpCollapsed = collapsed[grpKey];
+                            return (
+                              <div key={grpName}>
+                                <div onClick={() => toggle(grpKey)} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 14px", paddingLeft:54, background:C.bg, cursor:"pointer", borderBottom:`1px solid ${C.bgSoft}` }}>
+                                  <span style={{ fontSize:10, color:C.textMid, width:14 }}>{grpCollapsed ? "▶" : "▼"}</span>
+                                  <span style={{ fontSize:12 }}>📂</span>
+                                  <span style={{ fontSize:12, fontWeight:600, color:C.textMid }}>{grpName}</span>
+                                  <span style={{ fontSize:10, color:C.textLight }}>{grp.length} 人</span>
+                                </div>
+                                {!grpCollapsed && grp.map(u => personRow(u, 88))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -3692,6 +3831,139 @@ function QuestionAdmin({ questions, courses }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   主管報表：我的團隊（部主管看本部、處主管看本處）
+   ══════════════════════════════════════ */
+function TeamReport({ currentUser, users, courses, allWatchHistory, quizResults }) {
+  const [expandUser, setExpandUser] = useState(null);
+
+  // 依主管管轄範圍，篩出「我的下屬」
+  const scope = currentUser.managerScope;  // division（部）/ department（處）
+  const teamMembers = useMemo(() => {
+    return users.filter(u => {
+      if (u.id === currentUser.id) return false;  // 不含自己
+      if (u.role === "superadmin") return false;
+      if (scope === "department") {
+        // 處主管：看同處別的所有人
+        return u.department && u.department === currentUser.department;
+      }
+      if (scope === "division") {
+        // 部主管：看同處別 + 同部別的人
+        return u.department === currentUser.department && u.division && u.division === currentUser.division;
+      }
+      return false;
+    });
+  }, [users, currentUser, scope]);
+
+  // 計算每位成員的學習統計
+  const memberStats = useMemo(() => {
+    return teamMembers.map(m => {
+      const history = allWatchHistory.filter(h => h.userId === m.id);
+      const completed = history.filter(h => (h.progress||0) >= 100).length;
+      const inProgress = history.filter(h => (h.progress||0) > 0 && (h.progress||0) < 100).length;
+      const totalMin = history.reduce((s,h) => s + (h.totalTime||0), 0);
+      // 測驗：quizResults 是物件，key 是 userId_courseId
+      const quizzes = Object.values(quizResults || {}).filter(q => q.userId === m.id);
+      const passed = quizzes.filter(q => (q.score/q.total) >= 0.6).length;
+      return { ...m, completed, inProgress, totalMin, quizCount: quizzes.length, passed, history };
+    }).sort((a,b) => b.completed - a.completed);
+  }, [teamMembers, allWatchHistory, quizResults]);
+
+  // 團隊總覽數字
+  const teamTotal = memberStats.length;
+  const avgCompleted = teamTotal > 0 ? (memberStats.reduce((s,m) => s + m.completed, 0) / teamTotal).toFixed(1) : 0;
+  const totalLearnMin = memberStats.reduce((s,m) => s + m.totalMin, 0);
+
+  const scopeLabel = scope === "department" ? `${currentUser.department}（全處）` : `${currentUser.department} / ${currentUser.division}（本部）`;
+
+  return (
+    <div>
+      <div style={{ marginBottom:14 }}>
+        <h2 style={{ fontSize:18, fontWeight:700, color:C.text, margin:0 }}>👨‍👩‍👧‍👦 我的團隊</h2>
+        <p style={{ fontSize:12, color:C.textLight, margin:"4px 0 0" }}>管轄範圍：{scopeLabel} · 共 {teamTotal} 位同仁</p>
+      </div>
+
+      {/* 團隊總覽 */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px,1fr))", gap:12, marginBottom:18 }}>
+        {[
+          { l:"團隊人數", v:teamTotal, u:"人", i:"👥" },
+          { l:"平均完成課程", v:avgCompleted, u:"門/人", i:"✅" },
+          { l:"團隊總學習時數", v:Math.round(totalLearnMin/60*10)/10, u:"小時", i:"⏱️" },
+        ].map(s => (
+          <div key={s.l} style={{ background:"#FFF", borderRadius:10, padding:16, border:`1px solid ${C.border}` }}>
+            <div style={{ fontSize:22, marginBottom:4 }}>{s.i}</div>
+            <div style={{ fontSize:11, color:C.textLight }}>{s.l}</div>
+            <div style={{ fontSize:24, fontWeight:700, color:C.text, marginTop:2 }}>{s.v}<span style={{ fontSize:12, fontWeight:400, color:C.textLight, marginLeft:3 }}>{s.u}</span></div>
+          </div>
+        ))}
+      </div>
+
+      {/* 成員列表 */}
+      {memberStats.length === 0 ? (
+        <div style={{ textAlign:"center", padding:48, color:C.textLight, background:"#FFF", borderRadius:12, border:`1px solid ${C.border}` }}>
+          <p style={{ fontSize:40, margin:0 }}>👤</p>
+          <p style={{ fontSize:14, margin:"10px 0 0" }}>您的管轄範圍內目前沒有同仁資料</p>
+          <p style={{ fontSize:12, margin:"4px 0 0" }}>請確認同仁的處別/部別設定，以及您的主管管轄範圍設定</p>
+        </div>
+      ) : (
+        <div style={{ background:"#FFF", borderRadius:12, border:`1px solid ${C.border}`, overflow:"hidden" }}>
+          <div style={{ display:"flex", padding:"10px 14px", borderBottom:`1px solid ${C.border}`, background:C.bgSoft, fontSize:11, color:C.textLight, fontWeight:600 }}>
+            <span style={{ flex:2 }}>同仁</span>
+            <span style={{ flex:1, textAlign:"center" }}>已完成</span>
+            <span style={{ flex:1, textAlign:"center" }}>進行中</span>
+            <span style={{ flex:1, textAlign:"center" }}>學習時數</span>
+            <span style={{ flex:1, textAlign:"center" }}>測驗通過</span>
+          </div>
+          {memberStats.map(m => (
+            <div key={m.id}>
+              <div onClick={() => setExpandUser(expandUser===m.id ? null : m.id)} style={{ display:"flex", alignItems:"center", padding:"11px 14px", borderBottom:`1px solid ${C.bgSoft}`, cursor:"pointer", fontSize:13 }}>
+                <span style={{ flex:2, display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ width:28, height:28, borderRadius:"50%", background:`linear-gradient(135deg, ${C.navy}, ${C.navyLight})`, color:"#FFF", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:600, flexShrink:0 }}>{m.name?.[0]||"?"}</span>
+                  <span>
+                    <span style={{ fontWeight:600, color:C.text }}>{m.name}</span>
+                    <span style={{ fontSize:11, color:C.textLight, marginLeft:6 }}>{m.division || m.department}</span>
+                  </span>
+                </span>
+                <span style={{ flex:1, textAlign:"center", fontWeight:600, color:C.success }}>{m.completed}</span>
+                <span style={{ flex:1, textAlign:"center", color:C.warning }}>{m.inProgress}</span>
+                <span style={{ flex:1, textAlign:"center", color:C.textMid }}>{m.totalMin} 分</span>
+                <span style={{ flex:1, textAlign:"center", color:C.textMid }}>{m.passed}/{m.quizCount}</span>
+              </div>
+              {/* 展開：該員學習明細 */}
+              {expandUser===m.id && (
+                <div style={{ padding:"12px 14px 12px 50px", background:C.bg, borderBottom:`1px solid ${C.border}` }}>
+                  {m.history.length === 0 ? (
+                    <p style={{ fontSize:12, color:C.textLight, margin:0 }}>尚無學習紀錄</p>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                      {m.history.map(h => {
+                        const course = courses.find(c => c.id === h.courseId);
+                        return (
+                          <div key={h.courseId} style={{ display:"flex", alignItems:"center", gap:10, fontSize:12 }}>
+                            <span style={{ flex:1, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{course?.title || "（已刪除課程）"}</span>
+                            <div style={{ width:100, height:5, borderRadius:3, background:C.border, flexShrink:0 }}>
+                              <div style={{ height:"100%", borderRadius:3, background: (h.progress||0)>=100?C.success:`linear-gradient(90deg, ${C.navy}, ${C.gold})`, width:`${h.progress||0}%` }} />
+                            </div>
+                            <span style={{ width:40, textAlign:"right", color: (h.progress||0)>=100?C.success:C.textMid, fontWeight:600, flexShrink:0 }}>{h.progress||0}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ fontSize:11, color:C.textLight, marginTop:12, lineHeight:1.6 }}>
+        💡 此報表依您的「主管管轄範圍」自動顯示對應同仁。{scope==="department" ? "處級主管可看全處同仁。" : "部級主管可看本部同仁。"}點同仁可展開查看各課程學習進度。
+      </p>
     </div>
   );
 }
