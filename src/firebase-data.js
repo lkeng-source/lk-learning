@@ -255,12 +255,16 @@ export const addCourse = async (courseData) => {
   const ref = await addDoc(collection(db, "courses"), {
     ...courseData,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
   return ref.id;
 };
 
 export const updateCourse = async (id, data) => {
-  await updateDoc(doc(db, "courses", id), data);
+  await updateDoc(doc(db, "courses", id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
 };
 
 export const deleteCourse = async (id) => {
