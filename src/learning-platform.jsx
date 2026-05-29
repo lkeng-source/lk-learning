@@ -2870,6 +2870,50 @@ function UserAdmin({ users }) {
   // 處別清單（用於篩選下拉）
   const deptOptions = [...new Set(users.map(u => u.department).filter(Boolean))];
 
+  // 組織樹：處 → 部別清單（用於樹狀勾選介面）
+  const orgTree = useMemo(() => {
+    const tree = {};
+    users.forEach(u => {
+      const d = u.department;
+      const v = u.division;
+      if (!d) return;
+      if (!tree[d]) tree[d] = new Set();
+      if (v) tree[d].add(v);
+    });
+    // 轉成排序好的陣列
+    return Object.keys(tree).sort().map(d => ({
+      dept: d,
+      divisions: [...tree[d]].sort(),
+    }));
+  }, [users]);
+
+  // 切換樹狀節點勾選
+  // path 格式：處別名稱（"管理處"）= 整個處；"處別>部別"（"質安中心>資訊部"）= 該部
+  const toggleNode = (path) => {
+    setManagedDepartments(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path]);
+  };
+  // 勾「處（全處）」時，把該處底下個別勾選的部別清掉（避免重複）
+  const toggleDept = (deptName) => {
+    setManagedDepartments(prev => {
+      const isOn = prev.includes(deptName);
+      if (isOn) {
+        return prev.filter(p => p !== deptName);
+      }
+      // 加入「整個處」，並移除該處底下任何已勾的個別部別
+      return [...prev.filter(p => !p.startsWith(deptName + ">")), deptName];
+    });
+  };
+  // 勾「部」時，若該處已勾「全處」，要先解除（避免衝突）
+  const toggleDivision = (deptName, divName) => {
+    const path = `${deptName}>${divName}`;
+    setManagedDepartments(prev => {
+      const isOn = prev.includes(path);
+      if (isOn) return prev.filter(p => p !== path);
+      // 先把「全處」勾選移除（如果有的話）
+      return [...prev.filter(p => p !== deptName), path];
+    });
+  };
+
   // 篩選後的使用者
   const filteredUsers = users.filter(u => {
     const st = u.status || "active";
@@ -2933,34 +2977,54 @@ function UserAdmin({ users }) {
             )}
           </div>
 
-          {/* 主管管轄處別（多選），role 為 admin 且有設主管類型才顯示 */}
+          {/* 主管管轄範圍（樹狀勾選），role 為 admin 且有設主管類型才顯示 */}
           {role==="admin" && managerScope && (
-            <div style={{ marginTop:12, padding:12, background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}40` }}>
-              <p style={{ margin:"0 0 6px", fontSize:13, color:C.text, fontWeight:600 }}>📋 管轄處別（可勾選多個，兼管時用）</p>
-              <p style={{ margin:"0 0 10px", fontSize:11, color:C.textMid, lineHeight:1.6 }}>
-                {managerScope === "department"
-                  ? "勾選此主管可看到的處別，會看到該處全部同仁"
-                  : "勾選此主管可看到的處別，會看到該處中與此主管同部別的同仁"}
+            <div style={{ marginTop:12, padding:14, background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}40` }}>
+              <p style={{ margin:"0 0 6px", fontSize:13, color:C.text, fontWeight:600 }}>🌳 管轄範圍（樹狀勾選）</p>
+              <p style={{ margin:"0 0 12px", fontSize:11, color:C.textMid, lineHeight:1.7 }}>
+                💡 勾「<strong>處（全處）</strong>」= 該處所有同仁納入管轄<br />
+                💡 只勾某個「<strong>部</strong>」= 只看那個部（適合跨處兼管特定單位）<br />
+                {managerScope === "division" && <>⚠️ 部主管模式：實際還會與您的部別「<strong>{division||"（未填）"}</strong>」做交叉比對</>}
               </p>
-              {deptOptions.length === 0 ? (
+              {orgTree.length === 0 ? (
                 <p style={{ fontSize:12, color:C.textLight, fontStyle:"italic" }}>系統內尚無任何處別，請先建立使用者並設定處別</p>
               ) : (
-                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                  {deptOptions.map(dept => {
-                    const checked = managedDepartments.includes(dept);
+                <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:300, overflowY:"auto", background:"#FFF", borderRadius:7, padding:8, border:`1px solid ${C.border}` }}>
+                  {orgTree.map(node => {
+                    const deptChecked = managedDepartments.includes(node.dept);
                     return (
-                      <label key={dept} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${checked?C.gold:C.border}`, background:checked?`${C.gold}15`:"#FFF", cursor:"pointer", fontSize:12, color:checked?C.navy:C.textMid, fontWeight:checked?600:400 }}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleManagedDept(dept)} style={{ accentColor:C.gold, cursor:"pointer" }} />
-                        {dept}
-                      </label>
+                      <div key={node.dept}>
+                        {/* 處節點 */}
+                        <label style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:6, background:deptChecked?`${C.gold}15`:"transparent", cursor:"pointer", fontSize:13, fontWeight:deptChecked?600:500, color:deptChecked?C.navy:C.text }}>
+                          <input type="checkbox" checked={deptChecked} onChange={() => toggleDept(node.dept)} style={{ accentColor:C.gold, cursor:"pointer", width:14, height:14 }} />
+                          <span style={{ fontSize:14 }}>🏢</span>
+                          {node.dept}
+                          <span style={{ fontSize:10, color:C.textLight, fontWeight:400 }}>（全處）</span>
+                        </label>
+                        {/* 部節點 */}
+                        {node.divisions.map(divName => {
+                          const path = `${node.dept}>${divName}`;
+                          const divChecked = managedDepartments.includes(path);
+                          const coveredByDept = deptChecked;  // 處被勾時，部視覺上呈現「已涵蓋」
+                          return (
+                            <label key={divName} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", paddingLeft:36, borderRadius:6, background:divChecked?`${C.gold}15`:"transparent", cursor: coveredByDept ? "not-allowed" : "pointer", fontSize:12, opacity:coveredByDept?0.5:1, color:divChecked?C.navy:C.textMid }}>
+                              <input type="checkbox" checked={divChecked || coveredByDept} disabled={coveredByDept} onChange={() => toggleDivision(node.dept, divName)} style={{ accentColor:C.gold, cursor:coveredByDept?"not-allowed":"pointer", width:13, height:13 }} />
+                              <span style={{ fontSize:13 }}>📁</span>
+                              {divName}
+                              {coveredByDept && <span style={{ fontSize:9, color:C.textLight }}>（已含於全處）</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </div>
               )}
               {managedDepartments.length > 0 && (
-                <p style={{ margin:"10px 0 0", fontSize:11, color:C.navy }}>
-                  ✓ 已勾選 {managedDepartments.length} 個處別：{managedDepartments.join("、")}
-                </p>
+                <div style={{ margin:"10px 0 0", padding:"8px 10px", background:`${C.navy}08`, borderRadius:6, fontSize:11, color:C.navy, lineHeight:1.6 }}>
+                  ✓ 已勾選 {managedDepartments.length} 項：<br />
+                  <strong>{managedDepartments.map(p => p.includes(">") ? p.replace(">", " > ") : p + "（全處）").join("、")}</strong>
+                </div>
               )}
             </div>
           )}
@@ -3031,7 +3095,7 @@ function UserAdmin({ users }) {
                     {u.managerScope && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:6, background:`${C.gold}18`, color:C.navy }}>{u.managerScope==="department"?"處主管":"部主管"}</span>}
                   </div>
                   {u.managerScope && Array.isArray(u.managedDepartments) && u.managedDepartments.length > 0 && (
-                    <div style={{ fontSize:10, color:C.textLight, marginTop:3 }}>管轄：{u.managedDepartments.join("、")}</div>
+                    <div style={{ fontSize:10, color:C.textLight, marginTop:3 }}>管轄：{u.managedDepartments.map(p => p.includes(">") ? p.replace(">", "→") : p+"(全)").join("、")}</div>
                   )}
                 </td>
                 <td style={{ padding:"8px 10px" }}>
@@ -3920,29 +3984,43 @@ function QuestionAdmin({ questions, courses }) {
 function TeamReport({ currentUser, users, courses, allWatchHistory, quizResults }) {
   const [expandUser, setExpandUser] = useState(null);
 
-  // 依主管管轄範圍，篩出「我的下屬」（新版：支援多重管轄）
+  // 依主管管轄範圍，篩出「我的下屬」（新版：支援樹狀勾選 + 多重管轄）
   const scope = currentUser.managerScope;  // division（部主管）/ department（處主管）
-  // 管轄處別清單：優先用新欄位 managedDepartments，向下相容到只有 department 的舊資料
-  const managedDepts = Array.isArray(currentUser.managedDepartments) && currentUser.managedDepartments.length > 0
+  // 管轄路徑清單：每個項目是 "處別"（整個處）或 "處別>部別"（特定部）
+  // 向下相容：若是舊資料只有 currentUser.department，當作勾整個處
+  const managedPaths = Array.isArray(currentUser.managedDepartments) && currentUser.managedDepartments.length > 0
     ? currentUser.managedDepartments
     : (currentUser.department ? [currentUser.department] : []);
+
+  // 判斷某員工是否在管轄路徑內
+  const isUserInManagedPaths = (u) => {
+    return managedPaths.some(path => {
+      if (path.includes(">")) {
+        // "處別>部別" 格式：必須處別 + 部別都對
+        const [dept, div] = path.split(">");
+        return u.department === dept && u.division === div;
+      } else {
+        // "處別" 格式：整個處（不論部別/組別都納入）
+        return u.department === path;
+      }
+    });
+  };
 
   const teamMembers = useMemo(() => {
     return users.filter(u => {
       if (u.id === currentUser.id) return false;  // 不含自己
       if (u.role === "superadmin") return false;
-      if (managedDepts.length === 0) return false;
-      // 處主管：勾選的處別中，所有人都看得到
-      if (scope === "department") {
-        return managedDepts.includes(u.department);
-      }
-      // 部主管：勾選的處別中，與主管同部別的人才看得到
+      if (managedPaths.length === 0) return false;
+      // 先看員工是否落在勾選的範圍內
+      if (!isUserInManagedPaths(u)) return false;
+      // 部主管：再加一層篩選 — 員工的部別要與主管同部
       if (scope === "division") {
-        return managedDepts.includes(u.department) && u.division && u.division === currentUser.division;
+        return u.division && u.division === currentUser.division;
       }
-      return false;
+      // 處主管：勾的範圍內所有人都納入
+      return true;
     });
-  }, [users, currentUser, scope, managedDepts.join("|")]);
+  }, [users, currentUser, scope, managedPaths.join("|")]);
 
   // 計算每位成員的學習統計
   const memberStats = useMemo(() => {
@@ -3964,11 +4042,10 @@ function TeamReport({ currentUser, users, courses, allWatchHistory, quizResults 
   const totalLearnMin = memberStats.reduce((s,m) => s + m.totalMin, 0);
 
   // 管轄範圍顯示文字
-  const scopeLabel = managedDepts.length === 0
-    ? "（尚未設定管轄處別）"
-    : scope === "department"
-      ? `${managedDepts.join(" + ")}（全處）`
-      : `${managedDepts.join(" + ")} → ${currentUser.division || "本部"}`;
+  const scopeLabel = managedPaths.length === 0
+    ? "（尚未設定管轄範圍）"
+    : managedPaths.map(p => p.includes(">") ? p.replace(">", " > ") : p + "（全處）").join("、")
+      + (scope === "division" ? `（限本部「${currentUser.division||"未填"}」）` : "");
 
   return (
     <div>
