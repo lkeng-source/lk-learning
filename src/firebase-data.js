@@ -113,7 +113,8 @@ export const createUserAccount = async (empNo, name, email, password, role, depa
     status: "active",              // active（使用中）/ suspended（已暫停/留停）/ inactive（已停用/離職）
     statusEffectiveDate: "",       // 異動生效日期（YYYY-MM-DD），到期自動鎖
     statusNote: "",                // 異動備註（調部門到哪、留停原因等）
-    managerScope: "",              // 主管管轄範圍：""（無）/ "division"（管部）/ "department"（管處）
+    managerScope: "",              // 主管類型：""（不是主管）/ "division"（部主管）/ "department"（處主管）
+    managedDepartments: [],        // 管轄的處別清單（陣列，可兼管多個處）
     mustChangePw: !password,
     favorites: [],
     createdAt: serverTimestamp(),
