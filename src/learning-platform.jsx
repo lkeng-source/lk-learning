@@ -1121,7 +1121,7 @@ function Front({ currentUser, onLogout, setView }) {
               </div>
               <div>
                 <p style={{ margin:0, fontSize:18, fontWeight:600, color:C.text }}>{currentUser.name}</p>
-                <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="superadmin" ? "系統管理員" : currentUser.role==="admin" ? "管理員" : "一般使用者"}</p>
+                <p style={{ margin:"3px 0 0", fontSize:12, color:C.textLight }}>{currentUser.role==="superadmin" ? "系統管理員" : currentUser.role==="admin" ? "主管" : "一般使用者"}</p>
               </div>
             </div>
 
@@ -2802,7 +2802,8 @@ function UserAdmin({ users }) {
   const [division, setDivision] = useState("");   // 部別
   const [group, setGroup] = useState("");          // 組別
   const [role, setRole] = useState("user");
-  const [managerScope, setManagerScope] = useState("");  // 主管管轄範圍
+  const [managerScope, setManagerScope] = useState("");           // 主管類型：division/department
+  const [managedDepartments, setManagedDepartments] = useState([]); // 管轄處別清單（可多選）
   const [saving, setSaving] = useState(false);
   const [showWarning, setShowWarning] = useState(true);
   // 篩選 / 搜尋 / 分頁 / 檢視模式
@@ -2812,15 +2813,20 @@ function UserAdmin({ users }) {
   const [viewMode, setViewMode] = useState("list");        // list / org（組織架構）
   const [moveModal, setMoveModal] = useState(null);        // 異動視窗的對象 user
 
-  const reset = () => { setEmpNo(""); setName(""); setEmail(""); setPassword(""); setDepartment(""); setDivision(""); setGroup(""); setRole("user"); setManagerScope(""); setEditId(null); setShowForm(false); };
-  const startEdit = (u) => { setEmpNo(u.empNo||""); setName(u.name); setEmail(u.email); setPassword(""); setDepartment(u.department||""); setDivision(u.division||""); setGroup(u.group||""); setRole(u.role||"user"); setManagerScope(u.managerScope||""); setEditId(u.id); setShowForm(true); };
+  const reset = () => { setEmpNo(""); setName(""); setEmail(""); setPassword(""); setDepartment(""); setDivision(""); setGroup(""); setRole("user"); setManagerScope(""); setManagedDepartments([]); setEditId(null); setShowForm(false); };
+  const startEdit = (u) => { setEmpNo(u.empNo||""); setName(u.name); setEmail(u.email); setPassword(""); setDepartment(u.department||""); setDivision(u.division||""); setGroup(u.group||""); setRole(u.role||"user"); setManagerScope(u.managerScope||""); setManagedDepartments(u.managedDepartments||[]); setEditId(u.id); setShowForm(true); };
+
+  // 切換管轄處別（勾選/取消）
+  const toggleManagedDept = (deptName) => {
+    setManagedDepartments(prev => prev.includes(deptName) ? prev.filter(d => d !== deptName) : [...prev, deptName]);
+  };
 
   const save = async () => {
     if (!name.trim() || !email.trim() || !empNo.trim()) { alert("員工編號、姓名、Email 為必填"); return; }
     setSaving(true);
     try {
       if (editId) {
-        await updateUserData(editId, { empNo, name, department, division, group, role, managerScope });
+        await updateUserData(editId, { empNo, name, department, division, group, role, managerScope, managedDepartments });
         reset();
       } else {
         const finalPw = password.trim() || empNo;
@@ -2851,7 +2857,7 @@ function UserAdmin({ users }) {
   };
 
   // 角色標籤
-  const roleLabel = (r) => r==="superadmin" ? "系統管理員" : r==="admin" ? "管理員" : "使用者";
+  const roleLabel = (r) => r==="superadmin" ? "系統管理員" : r==="admin" ? "主管" : "使用者";
   const roleColor = (r) => r==="superadmin" ? C.danger : r==="admin" ? C.navy : C.accent;
 
   // 狀態分頁定義
@@ -2912,20 +2918,53 @@ function UserAdmin({ users }) {
             <Field label="角色">
               <select value={role} onChange={e => setRole(e.target.value)} style={inp}>
                 <option value="user">使用者</option>
-                <option value="admin">管理員</option>
+                <option value="admin">主管</option>
                 <option value="superadmin">系統管理員</option>
               </select>
             </Field>
             {(role==="admin") && (
-              <Field label="主管管轄範圍（報表用）">
+              <Field label="主管類型">
                 <select value={managerScope} onChange={e => setManagerScope(e.target.value)} style={inp}>
-                  <option value="">不是主管</option>
-                  <option value="division">部級主管（看本部）</option>
-                  <option value="department">處級主管（看本處）</option>
+                  <option value="">尚未設定</option>
+                  <option value="division">部主管（看自己部別的人）</option>
+                  <option value="department">處主管（看整個處的人）</option>
                 </select>
               </Field>
             )}
           </div>
+
+          {/* 主管管轄處別（多選），role 為 admin 且有設主管類型才顯示 */}
+          {role==="admin" && managerScope && (
+            <div style={{ marginTop:12, padding:12, background:`${C.gold}08`, borderRadius:8, border:`1px solid ${C.gold}40` }}>
+              <p style={{ margin:"0 0 6px", fontSize:13, color:C.text, fontWeight:600 }}>📋 管轄處別（可勾選多個，兼管時用）</p>
+              <p style={{ margin:"0 0 10px", fontSize:11, color:C.textMid, lineHeight:1.6 }}>
+                {managerScope === "department"
+                  ? "勾選此主管可看到的處別，會看到該處全部同仁"
+                  : "勾選此主管可看到的處別，會看到該處中與此主管同部別的同仁"}
+              </p>
+              {deptOptions.length === 0 ? (
+                <p style={{ fontSize:12, color:C.textLight, fontStyle:"italic" }}>系統內尚無任何處別，請先建立使用者並設定處別</p>
+              ) : (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {deptOptions.map(dept => {
+                    const checked = managedDepartments.includes(dept);
+                    return (
+                      <label key={dept} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:7, border:`1.5px solid ${checked?C.gold:C.border}`, background:checked?`${C.gold}15`:"#FFF", cursor:"pointer", fontSize:12, color:checked?C.navy:C.textMid, fontWeight:checked?600:400 }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleManagedDept(dept)} style={{ accentColor:C.gold, cursor:"pointer" }} />
+                        {dept}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {managedDepartments.length > 0 && (
+                <p style={{ margin:"10px 0 0", fontSize:11, color:C.navy }}>
+                  ✓ 已勾選 {managedDepartments.length} 個處別：{managedDepartments.join("、")}
+                </p>
+              )}
+            </div>
+          )}
+
           <div style={{ display:"flex", gap:6, marginTop:10 }}>
             <Btn onClick={save} variant="gold" disabled={saving}>{saving?"處理中...":(editId?"儲存":"建立")}</Btn>
             <Btn onClick={reset} variant="outline">取消</Btn>
@@ -2987,8 +3026,13 @@ function UserAdmin({ users }) {
                   )}
                 </td>
                 <td style={{ padding:"8px 10px" }}>
-                  <span style={{ fontSize:10, padding:"3px 8px", borderRadius:7, background:`${roleColor(u.role)}15`, color:roleColor(u.role), fontWeight:600 }}>{roleLabel(u.role)}</span>
-                  {u.managerScope && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:6, background:`${C.gold}18`, color:C.navy, marginLeft:4 }}>{u.managerScope==="department"?"處主管":"部主管"}</span>}
+                  <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
+                    <span style={{ fontSize:10, padding:"3px 8px", borderRadius:7, background:`${roleColor(u.role)}15`, color:roleColor(u.role), fontWeight:600 }}>{roleLabel(u.role)}</span>
+                    {u.managerScope && <span style={{ fontSize:9, padding:"2px 6px", borderRadius:6, background:`${C.gold}18`, color:C.navy }}>{u.managerScope==="department"?"處主管":"部主管"}</span>}
+                  </div>
+                  {u.managerScope && Array.isArray(u.managedDepartments) && u.managedDepartments.length > 0 && (
+                    <div style={{ fontSize:10, color:C.textLight, marginTop:3 }}>管轄：{u.managedDepartments.join("、")}</div>
+                  )}
                 </td>
                 <td style={{ padding:"8px 10px" }}>
                   {u.mustChangePw ? <span style={{ fontSize:10, padding:"3px 7px", borderRadius:7, background:`${C.warning}15`, color:C.warning }}>未改</span> : <span style={{ fontSize:10, color:C.success }}>✓</span>}
@@ -3876,23 +3920,29 @@ function QuestionAdmin({ questions, courses }) {
 function TeamReport({ currentUser, users, courses, allWatchHistory, quizResults }) {
   const [expandUser, setExpandUser] = useState(null);
 
-  // 依主管管轄範圍，篩出「我的下屬」
-  const scope = currentUser.managerScope;  // division（部）/ department（處）
+  // 依主管管轄範圍，篩出「我的下屬」（新版：支援多重管轄）
+  const scope = currentUser.managerScope;  // division（部主管）/ department（處主管）
+  // 管轄處別清單：優先用新欄位 managedDepartments，向下相容到只有 department 的舊資料
+  const managedDepts = Array.isArray(currentUser.managedDepartments) && currentUser.managedDepartments.length > 0
+    ? currentUser.managedDepartments
+    : (currentUser.department ? [currentUser.department] : []);
+
   const teamMembers = useMemo(() => {
     return users.filter(u => {
       if (u.id === currentUser.id) return false;  // 不含自己
       if (u.role === "superadmin") return false;
+      if (managedDepts.length === 0) return false;
+      // 處主管：勾選的處別中，所有人都看得到
       if (scope === "department") {
-        // 處主管：看同處別的所有人
-        return u.department && u.department === currentUser.department;
+        return managedDepts.includes(u.department);
       }
+      // 部主管：勾選的處別中，與主管同部別的人才看得到
       if (scope === "division") {
-        // 部主管：看同處別 + 同部別的人
-        return u.department === currentUser.department && u.division && u.division === currentUser.division;
+        return managedDepts.includes(u.department) && u.division && u.division === currentUser.division;
       }
       return false;
     });
-  }, [users, currentUser, scope]);
+  }, [users, currentUser, scope, managedDepts.join("|")]);
 
   // 計算每位成員的學習統計
   const memberStats = useMemo(() => {
@@ -3913,7 +3963,12 @@ function TeamReport({ currentUser, users, courses, allWatchHistory, quizResults 
   const avgCompleted = teamTotal > 0 ? (memberStats.reduce((s,m) => s + m.completed, 0) / teamTotal).toFixed(1) : 0;
   const totalLearnMin = memberStats.reduce((s,m) => s + m.totalMin, 0);
 
-  const scopeLabel = scope === "department" ? `${currentUser.department}（全處）` : `${currentUser.department} / ${currentUser.division}（本部）`;
+  // 管轄範圍顯示文字
+  const scopeLabel = managedDepts.length === 0
+    ? "（尚未設定管轄處別）"
+    : scope === "department"
+      ? `${managedDepts.join(" + ")}（全處）`
+      : `${managedDepts.join(" + ")} → ${currentUser.division || "本部"}`;
 
   return (
     <div>
