@@ -202,6 +202,23 @@ function PersonIcon({ size = 16, color = "#5A6878", filled = false }) {
   );
 }
 
+/* ─── 團隊 icon（三人，線條風格，圖2右）─── */
+function TeamIcon({ size = 18, color = "#5A6878" }) {
+  return (
+    <svg viewBox="0 0 28 24" width={size * 28/24} height={size} style={{ display:"block", flexShrink:0 }}>
+      {/* 左後方人 */}
+      <circle cx="6" cy="8" r="2.6" fill="none" stroke={color} strokeWidth="1.6" />
+      <path d="M1.5 17.5c0-2.7 2-4.5 4.5-4.5s4.5 1.8 4.5 4.5" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      {/* 右後方人 */}
+      <circle cx="22" cy="8" r="2.6" fill="none" stroke={color} strokeWidth="1.6" />
+      <path d="M17.5 17.5c0-2.7 2-4.5 4.5-4.5s4.5 1.8 4.5 4.5" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      {/* 前方主要人 */}
+      <circle cx="14" cy="9" r="3.4" fill="none" stroke={color} strokeWidth="1.8" />
+      <path d="M8 21c0-3.3 2.7-5.6 6-5.6s6 2.3 6 5.6" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function LKLogo({ size = 36, color = "#D4A528" }) {
   // viewBox 比例設計：L、(&)、K、® 四個元素
   // 整體比例約 寬:高 = 2.6:1
@@ -361,7 +378,7 @@ export default function App() {
             // 若剛套用了調部門異動，重新拿最新資料
             const freshData = check.applied ? await getCurrentUserData(user.uid) : userData;
             setCurrentUser(freshData);
-            const isAdmin = freshData.role === "admin" || freshData.role === "superadmin";
+            const isAdmin = freshData.role === "superadmin";
             setView(isAdmin ? "admin" : "front");
           } else {
             // Auth 有帳號但 Firestore 沒資料 - 異常狀態
@@ -382,7 +399,7 @@ export default function App() {
 
   // 嘗試初始化預設資料（會自動跳過已有資料）
   useEffect(() => {
-    if (currentUser?.role === "admin" || currentUser?.role === "superadmin") {
+    if (currentUser?.role === "superadmin") {
       initializeDefaultData().catch(err => console.error("Init failed:", err));
     }
   }, [currentUser]);
@@ -648,6 +665,8 @@ function Front({ currentUser, onLogout, setView }) {
   }, [currentUser.id]);
 
   const favorites = userData?.favorites || [];
+  // 是否為主管（部級/處級）→ 前台顯示「我的團隊」
+  const isManager = currentUser?.managerScope === "division" || currentUser?.managerScope === "department";
   const handleToggleFavorite = async (courseId) => {
     try { await toggleFavorite(currentUser.id, courseId, favorites); }
     catch (e) { console.error("toggle favorite failed:", e); }
@@ -815,14 +834,19 @@ function Front({ currentUser, onLogout, setView }) {
         <div style={{ flex:1, maxWidth:380, minWidth:120 }}>
           <input value={search} onChange={e => { setSearch(e.target.value); if (page !== "courses") setPage("courses"); }} placeholder="🔍 搜尋課程、講師..." style={{ width:"100%", padding:"8px 16px", borderRadius:20, border:`1px solid ${C.border}`, fontSize:13, outline:"none", boxSizing:"border-box", background:C.bg }} />
         </div>
-        <div style={{ display:"flex", gap:2 }}>
+        <div style={{ display:"flex", gap:2, alignItems:"center" }}>
           {[{l:"探索課程",p:"courses"},{l:"我的學習",p:"profile"}].map(n => (
             <button key={n.p} onClick={() => setPage(n.p)} style={{ padding:"6px 12px", borderRadius:8, border:"none", background:page===n.p?`${C.navy}10`:"transparent", color:page===n.p?C.navy:C.textLight, fontWeight:page===n.p?600:400, fontSize:13, cursor:"pointer" }}>{n.l}</button>
           ))}
+          {isManager && (
+            <button onClick={() => setPage("team")} style={{ padding:"6px 12px", borderRadius:8, border:"none", background:page==="team"?`${C.navy}10`:"transparent", color:page==="team"?C.navy:C.textLight, fontWeight:page==="team"?600:400, fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
+              <TeamIcon size={16} color={page==="team"?C.navy:C.textLight} />我的團隊
+            </button>
+          )}
         </div>
         {/* 右側：後台 + 信箱 + 頭像 + 登出，靠最右 */}
         <div style={{ display:"flex", alignItems:"center", gap:10, marginLeft:"auto", flexShrink:0 }}>
-          {(currentUser.role==="admin" || currentUser.role==="superadmin") && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
+          {currentUser.role==="superadmin" && <Btn onClick={() => setView("admin")} variant="outline" style={{ padding:"4px 10px", fontSize:11 }}>後台</Btn>}
           {/* 信箱 icon（站內信通知）*/}
           <button
             onClick={() => setPage("inbox")}
@@ -1069,6 +1093,19 @@ function Front({ currentUser, onLogout, setView }) {
 
       {page==="inbox" && (
         <InboxPage myQuestions={myQuestions} courses={courses} currentUser={currentUser} onOpenCourse={(c) => { setSelectedCourse(c); setPage("course"); }} />
+      )}
+
+      {/* 我的團隊（主管專用）*/}
+      {page==="team" && isManager && (
+        <div style={{ padding:"24px 20px", maxWidth:1100, margin:"0 auto" }}>
+          <TeamReport currentUser={currentUser} users={allUsers} courses={allCourses} allWatchHistory={allWatchHistory} quizResults={quizResults} />
+        </div>
+      )}
+      {page==="team" && !isManager && (
+        <div style={{ padding:"60px 20px", textAlign:"center", color:C.textLight }}>
+          <p style={{ fontSize:40, margin:0 }}>🔒</p>
+          <p style={{ fontSize:14, margin:"12px 0 0" }}>此頁面僅限主管檢視</p>
+        </div>
       )}
 
       {/* 個人檔案 */}
@@ -1997,7 +2034,6 @@ function Admin({ currentUser, onLogout, setView }) {
     { id:"analytics", label:"學習分析", icon:"📈" },
     { id:"quizzes", label:"測驗紀錄", icon:"📝" },
     { id:"questions", label:"問答管理", icon:"🙋", badge: pendingQuestionsCount },
-    ...(isManager ? [{ id:"team", label:"我的團隊", icon:"👨‍👩‍👧‍👦" }] : []),
   ];
 
   if (loading) return <LoadingScreen text="載入後台資料..." />;
@@ -2034,7 +2070,6 @@ function Admin({ currentUser, onLogout, setView }) {
         {tab==="analytics" && <Analytics courses={courses} users={users} allWatchHistory={allWatchHistory} />}
         {tab==="quizzes" && <QuizRecords quizResults={quizResults} users={users} courses={courses} />}
         {tab==="questions" && <QuestionAdmin questions={questions} courses={courses} />}
-        {tab==="team" && <TeamReport currentUser={currentUser} users={users} courses={courses} allWatchHistory={allWatchHistory} quizResults={quizResults} />}
       </div>
     </div>
   );
