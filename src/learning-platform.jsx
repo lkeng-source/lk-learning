@@ -894,7 +894,7 @@ function Front({ currentUser, onLogout, setView }) {
       {page==="courses" && (
         <div style={{ padding:"24px 20px", maxWidth:1200, margin:"0 auto" }}>
           {/* ══════ 公開儀表板 ══════ */}
-          <div style={{ background:`linear-gradient(120deg, ${C.navy}, ${C.navyLight} 70%, ${C.gold} 150%)`, borderRadius:14, padding:"20px 24px", marginBottom:24, color:"#FFF", position:"relative", overflow:"hidden" }}>
+          <div style={{ background:`linear-gradient(135deg, #F0C850 0%, ${C.gold} 40%, #C97825 100%)`, borderRadius:14, padding:"20px 24px", marginBottom:24, color:"#FFF", position:"relative", overflow:"hidden" }}>
             <div style={{ position:"absolute", right:-30, top:-40, width:160, height:160, borderRadius:"50%", background:"rgba(255,255,255,0.07)" }} />
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:16, position:"relative" }}>
               <div>
@@ -946,7 +946,7 @@ function Front({ currentUser, onLogout, setView }) {
       {page==="profile" && (
         <div>
           {/* 歡迎橫幅（金色系，呼應 LOGO）*/}
-          <div style={{ background:`linear-gradient(135deg, ${C.navy} 0%, ${C.navyLight} 60%, ${C.gold} 160%)`, padding:"32px 24px", color:"#FFF", position:"relative", overflow:"hidden" }}>
+          <div style={{ background:`linear-gradient(135deg, #F0C850 0%, ${C.gold} 40%, #C97825 100%)`, padding:"32px 24px", color:"#FFF", position:"relative", overflow:"hidden" }}>
             <div style={{ position:"absolute", right:-40, top:-40, width:200, height:200, borderRadius:"50%", background:"rgba(255,255,255,0.08)" }} />
             <div style={{ position:"absolute", right:60, bottom:-50, width:120, height:120, borderRadius:"50%", background:`${C.gold}25` }} />
             <div style={{ maxWidth:1100, margin:"0 auto", position:"relative" }}>
